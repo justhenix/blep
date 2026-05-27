@@ -2,30 +2,74 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { buildMockVerdict, fallbackVerdict } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
-import type { BlepScanResponse } from '$lib/blep/types';
+import type { BlepQuotaCheck, BlepScanResponse, BlepVerdict } from '$lib/blep/types';
 import { blepEnv } from '$lib/server/env';
+import { collectSources } from '$lib/server/firecrawl';
+import { verifyBearerToken } from '$lib/server/firebase-admin';
+import { generateVerdict } from '$lib/server/gemini';
+import { checkDailyQuota, hashClientAddress } from '$lib/server/quota';
 
-const buildMockResponse = (query: string, urls: string[] = []): BlepScanResponse => ({
-	ok: true,
-	mode: 'mock',
-	quota: {
-		remaining: Math.max(blepEnv.dailyLimit - 1, 0),
-		limit: blepEnv.dailyLimit
-	},
-	verdict: buildMockVerdict(query, urls)
+const defaultQuota = (): BlepQuotaCheck => ({
+	allowed: true,
+	remaining: Math.max(blepEnv.dailyLimit - 1, 0),
+	limit: blepEnv.dailyLimit
 });
 
-const buildFallbackResponse = (): BlepScanResponse => ({
-	ok: true,
-	mode: 'mock',
+const buildFallbackResponse = (
+	error: string,
+	quota: BlepQuotaCheck = defaultQuota()
+): BlepScanResponse => ({
+	ok: false,
+	mode: 'fallback',
+	error,
 	quota: {
-		remaining: Math.max(blepEnv.dailyLimit - 1, 0),
-		limit: blepEnv.dailyLimit
+		remaining: quota.remaining,
+		limit: quota.limit
 	},
+	sources: [],
 	verdict: fallbackVerdict
 });
 
-export const POST: RequestHandler = async ({ request }) => {
+const buildMockFallbackResponse = (
+	query: string,
+	urls: string[],
+	quota: BlepQuotaCheck
+): BlepScanResponse => ({
+	ok: false,
+	mode: 'fallback',
+	error: 'mock_mode_enabled',
+	quota: {
+		remaining: quota.remaining,
+		limit: quota.limit
+	},
+	sources: [],
+	verdict: buildMockVerdict(query, urls)
+});
+
+const getClientAddressSafe = (getClientAddress: () => string) => {
+	try {
+		return getClientAddress();
+	} catch {
+		return null;
+	}
+};
+
+const buildLiveResponse = (
+	quota: BlepQuotaCheck,
+	sources: { title: string; url: string }[],
+	verdict: BlepVerdict
+): BlepScanResponse => ({
+	ok: true,
+	mode: 'live',
+	quota: {
+		remaining: quota.remaining,
+		limit: quota.limit
+	},
+	sources,
+	verdict
+});
+
+export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	let body: unknown;
 
 	try {
@@ -58,9 +102,52 @@ export const POST: RequestHandler = async ({ request }) => {
 		);
 	}
 
+	let quota = defaultQuota();
+
+	let decodedToken: Awaited<ReturnType<typeof verifyBearerToken>>;
 	try {
-		return json(buildMockResponse(parsed.data.query, parsed.data.urls));
+		decodedToken = await verifyBearerToken(request.headers.get('authorization'));
 	} catch {
-		return json(buildFallbackResponse());
+		return json(
+			{
+				ok: false,
+				error: 'bad_auth',
+				message: 'Use Authorization: Bearer <Firebase ID token>.'
+			},
+			{ status: 401 }
+		);
+	}
+
+	try {
+		const clientAddress = getClientAddressSafe(getClientAddress);
+		const quotaSubject = decodedToken?.uid ?? hashClientAddress(clientAddress);
+
+		quota = await checkDailyQuota(quotaSubject);
+
+		if (!quota.allowed) {
+			return json(buildFallbackResponse('quota_exhausted', quota), { status: 429 });
+		}
+
+		if (blepEnv.useMock) {
+			return json(buildMockFallbackResponse(parsed.data.query, parsed.data.urls ?? [], quota));
+		}
+
+		const sourceResult = await collectSources(parsed.data.query, parsed.data.urls);
+
+		if (sourceResult.degraded) {
+			return json(buildFallbackResponse('live_scrape_failed', quota));
+		}
+
+		const verdict = await generateVerdict(parsed.data.query, sourceResult.sources);
+
+		return json(
+			buildLiveResponse(
+				quota,
+				sourceResult.sources.map((source) => ({ title: source.title, url: source.url })),
+				verdict
+			)
+		);
+	} catch {
+		return json(buildFallbackResponse('live_scan_failed', quota));
 	}
 };

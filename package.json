@@ -36,6 +36,8 @@
 		"vite": "^8.0.7"
 	},
 	"dependencies": {
+		"@google/genai": "^2.6.0",
+		"firebase-admin": "^13.10.0",
 		"zod": "^4.4.3"
 	}
 }

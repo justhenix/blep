@@ -23,12 +23,41 @@ export type BlepScanRequest = {
 	urls?: string[];
 };
 
-export type BlepScanResponse = {
-	ok: true;
-	mode: 'mock';
+export type BlepSource = {
+	title: string;
+	url: string;
+	markdown: string;
+};
+
+export type BlepQuota = {
 	quota: {
 		remaining: number;
 		limit: number;
 	};
+};
+
+export type BlepLiveScanResponse = BlepQuota & {
+	ok: true;
+	mode: 'live';
+	sources: {
+		title: string;
+		url: string;
+	}[];
 	verdict: BlepVerdict;
+};
+
+export type BlepFallbackScanResponse = BlepQuota & {
+	ok: false;
+	mode: 'fallback';
+	error: string;
+	sources: [];
+	verdict: BlepVerdict;
+};
+
+export type BlepScanResponse = BlepLiveScanResponse | BlepFallbackScanResponse;
+
+export type BlepQuotaCheck = {
+	allowed: boolean;
+	remaining: number;
+	limit: number;
 };

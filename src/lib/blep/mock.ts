@@ -19,7 +19,7 @@ export const fallbackVerdict: BlepVerdict = blepVerdictSchema.parse({
 		{
 			title: 'BLEP fallback',
 			url: fallbackEvidenceUrl,
-			quote_or_fact: 'Fallback result used when backend verdict generation fails.',
+			quote_or_fact: 'Fallback result used when live scrape, quota, or model validation fails.',
 			relevance: 'Keeps demo stable without pretending external research happened.'
 		}
 	]
