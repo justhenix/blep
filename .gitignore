@@ -1,0 +1,40 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode
+.idea
+
+# Test output
+coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+.env.local
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Agents
+.antigravitycli
+.playwright-cli
+AGENTS.md
