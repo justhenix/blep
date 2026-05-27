@@ -1,9 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { buildMockVerdict, fallbackVerdict } from '$lib/blep/mock';
+import { buildFallbackVerdict, buildMockVerdict } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
 import type { BlepQuotaCheck, BlepScanResponse, BlepVerdict } from '$lib/blep/types';
 import { blepEnv } from '$lib/server/env';
+import { BlepApiError, blepError, safeParseJson, type BlepErrorCode } from '$lib/server/errors';
 import { collectSources } from '$lib/server/firecrawl';
 import { verifyBearerToken } from '$lib/server/firebase-admin';
 import { generateVerdict } from '$lib/server/gemini';
@@ -16,8 +17,9 @@ const defaultQuota = (): BlepQuotaCheck => ({
 });
 
 const buildFallbackResponse = (
-	error: string,
-	quota: BlepQuotaCheck = defaultQuota()
+	error: BlepErrorCode,
+	quota: BlepQuotaCheck = defaultQuota(),
+	query = 'Unknown device'
 ): BlepScanResponse => ({
 	ok: false,
 	mode: 'fallback',
@@ -27,7 +29,7 @@ const buildFallbackResponse = (
 		limit: quota.limit
 	},
 	sources: [],
-	verdict: fallbackVerdict
+	verdict: buildFallbackVerdict(query)
 });
 
 const buildMockFallbackResponse = (
@@ -69,13 +71,31 @@ const buildLiveResponse = (
 	verdict
 });
 
+const respond = <T>(body: T, init?: ResponseInit) => {
+	console.info('[blep api] scan done');
+	return json(body, init);
+};
+
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+	console.info('[blep api] scan started');
+
 	let body: unknown;
 
 	try {
-		body = await request.json();
-	} catch {
-		return json(
+		body = await safeParseJson(request);
+	} catch (error) {
+		if (error instanceof BlepApiError) {
+			return respond(
+				{
+					ok: false,
+					error: error.code,
+					message: error.publicMessage
+				},
+				{ status: error.status }
+			);
+		}
+
+		return respond(
 			{
 				ok: false,
 				error: 'bad_json',
@@ -88,11 +108,17 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	const parsed = blepScanRequestSchema.safeParse(body);
 
 	if (!parsed.success) {
-		return json(
+		const inputError = blepError(
+			'bad_input',
+			400,
+			'Send JSON body with query string and optional urls array.'
+		);
+
+		return respond(
 			{
 				ok: false,
-				error: 'bad_input',
-				message: 'Send JSON body with query string and optional urls array.',
+				error: inputError.code,
+				message: inputError.publicMessage,
 				issues: parsed.error.issues.map((issue) => ({
 					path: issue.path.join('.'),
 					message: issue.message
@@ -102,19 +128,22 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		);
 	}
 
+	const queryForFallback = parsed.data.query;
 	let quota = defaultQuota();
 
 	let decodedToken: Awaited<ReturnType<typeof verifyBearerToken>>;
 	try {
 		decodedToken = await verifyBearerToken(request.headers.get('authorization'));
 	} catch {
-		return json(
+		const authError = blepError('bad_auth', 401, 'Use Authorization: Bearer <Firebase ID token>.');
+
+		return respond(
 			{
 				ok: false,
-				error: 'bad_auth',
-				message: 'Use Authorization: Bearer <Firebase ID token>.'
+				error: authError.code,
+				message: authError.publicMessage
 			},
-			{ status: 401 }
+			{ status: authError.status }
 		);
 	}
 
@@ -123,24 +152,30 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		const quotaSubject = decodedToken?.uid ?? hashClientAddress(clientAddress);
 
 		quota = await checkDailyQuota(quotaSubject);
+		console.info(`[blep quota] ${quota.allowed ? 'allowed' : 'blocked'}`);
 
 		if (!quota.allowed) {
-			return json(buildFallbackResponse('quota_exhausted', quota), { status: 429 });
+			return respond(buildFallbackResponse('quota_exhausted', quota, queryForFallback), {
+				status: 429
+			});
 		}
 
 		if (blepEnv.useMock) {
-			return json(buildMockFallbackResponse(parsed.data.query, parsed.data.urls ?? [], quota));
+			return respond(buildMockFallbackResponse(parsed.data.query, parsed.data.urls ?? [], quota));
 		}
 
 		const sourceResult = await collectSources(parsed.data.query, parsed.data.urls);
+		console.info(
+			`[blep scrape] sources count ${sourceResult.degraded ? 0 : sourceResult.sources.length}`
+		);
 
 		if (sourceResult.degraded) {
-			return json(buildFallbackResponse('live_scrape_failed', quota));
+			return respond(buildFallbackResponse('live_scrape_failed', quota, queryForFallback));
 		}
 
-		const verdict = await generateVerdict(parsed.data.query, sourceResult.sources);
+		const { verdict } = await generateVerdict(parsed.data.query, sourceResult.sources);
 
-		return json(
+		return respond(
 			buildLiveResponse(
 				quota,
 				sourceResult.sources.map((source) => ({ title: source.title, url: source.url })),
@@ -148,6 +183,6 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			)
 		);
 	} catch {
-		return json(buildFallbackResponse('live_scan_failed', quota));
+		return respond(buildFallbackResponse('live_scan_failed', quota, queryForFallback));
 	}
 };

@@ -1,11 +1,13 @@
 import type { BlepSource } from '$lib/blep/types';
+import {
+	BLEP_FIRECRAWL_REQUEST_TIMEOUT_MS,
+	BLEP_MAX_SOURCES,
+	BLEP_MIN_LIVE_SOURCES,
+	BLEP_SOURCE_MARKDOWN_MAX_CHARS
+} from './constants';
 import { blepEnv } from './env';
 
 const FIRECRAWL_BASE_URL = 'https://api.firecrawl.dev/v2';
-const MAX_SOURCES = 5;
-const MIN_LIVE_SOURCES = 1;
-const MARKDOWN_LIMIT = 3500;
-const REQUEST_TIMEOUT_MS = 20_000;
 
 type FirecrawlResult = {
 	title?: string;
@@ -38,7 +40,11 @@ const fallbackSource: BlepSource = {
 		'Live scrape failed. BLEP must return fallback verdict instead of pretending research happened.'
 };
 
-const withTimeout = async (url: string, init: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS) => {
+const withTimeout = async (
+	url: string,
+	init: RequestInit,
+	timeoutMs = BLEP_FIRECRAWL_REQUEST_TIMEOUT_MS
+) => {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -81,7 +87,7 @@ const normalizeSource = (item: FirecrawlResult): BlepSource | null => {
 	return {
 		title: item.title ?? item.metadata?.title ?? new URL(url).hostname,
 		url,
-		markdown: markdown.trim().slice(0, MARKDOWN_LIMIT)
+		markdown: markdown.trim().slice(0, BLEP_SOURCE_MARKDOWN_MAX_CHARS)
 	};
 };
 
@@ -100,7 +106,7 @@ const scrapeUrl = async (url: string): Promise<BlepSource | null> => {
 		url,
 		formats: ['markdown'],
 		onlyMainContent: true,
-		timeout: REQUEST_TIMEOUT_MS
+		timeout: BLEP_FIRECRAWL_REQUEST_TIMEOUT_MS
 	});
 
 	return normalizeSource(Array.isArray(result.data) ? result.data[0] : (result.data ?? {}));
@@ -114,7 +120,7 @@ const searchQuery = async (query: string, limit: number): Promise<BlepSource[]> 
 		scrapeOptions: {
 			formats: [{ type: 'markdown' }],
 			onlyMainContent: true,
-			timeout: REQUEST_TIMEOUT_MS
+			timeout: BLEP_FIRECRAWL_REQUEST_TIMEOUT_MS
 		}
 	});
 
@@ -128,7 +134,7 @@ export const collectSources = async (
 	urls: string[] = []
 ): Promise<SourceCollection> => {
 	try {
-		const provided = urls.slice(0, MAX_SOURCES);
+		const provided = urls.slice(0, BLEP_MAX_SOURCES);
 		const scraped = await Promise.allSettled(provided.map(scrapeUrl));
 		const sources = scraped
 			.filter(
@@ -138,14 +144,14 @@ export const collectSources = async (
 			.map((result) => result.value)
 			.filter((source): source is BlepSource => Boolean(source));
 
-		if (sources.length < 3 && provided.length < MAX_SOURCES) {
-			const searched = await searchQuery(query, MAX_SOURCES - sources.length);
+		if (sources.length < 3 && provided.length < BLEP_MAX_SOURCES) {
+			const searched = await searchQuery(query, BLEP_MAX_SOURCES - sources.length);
 			sources.push(...searched);
 		}
 
-		const unique = uniqueSources(sources).slice(0, MAX_SOURCES);
+		const unique = uniqueSources(sources).slice(0, BLEP_MAX_SOURCES);
 
-		if (unique.length < MIN_LIVE_SOURCES) {
+		if (unique.length < BLEP_MIN_LIVE_SOURCES) {
 			return { sources: [fallbackSource], degraded: true };
 		}
 

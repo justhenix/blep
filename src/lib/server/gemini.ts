@@ -110,13 +110,16 @@ const generateWithModel = async (model: string, query: string, sources: BlepSour
 	const text = response.text;
 	if (!text) throw new GeminiValidationError('gemini_empty_response');
 
-	return parseGeminiVerdict(text, sources);
+	const verdict = parseGeminiVerdict(text, sources);
+	console.info(`[blep gemini] model used ${model}`);
+
+	return { verdict, model };
 };
 
 export const generateVerdict = async (
 	query: string,
 	sources: BlepSource[]
-): Promise<BlepVerdict> => {
+): Promise<{ verdict: BlepVerdict; model: string }> => {
 	const primaryModel = blepEnv.demoMode ? blepEnv.geminiModelDemo : blepEnv.geminiModelMain;
 
 	try {

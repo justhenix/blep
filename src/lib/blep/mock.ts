@@ -3,27 +3,30 @@ import type { BlepVerdict } from './types';
 
 const fallbackEvidenceUrl = 'https://example.com/blep/mock-evidence';
 
-export const fallbackVerdict: BlepVerdict = blepVerdictSchema.parse({
-	name: 'Unknown device',
-	verdict: 'CAUTION',
-	landfill_year: 2028,
-	fatal_flaw: 'Research failed before BLEP could prove value.',
-	specs: {
-		upgradeable: false,
-		thermal: 'Unknown thermal behavior.',
-		forum_score: 5
-	},
-	roast: 'Not enough evidence. Wallet should stay in cave.',
-	summary: 'BLEP could not complete scan, so verdict falls back to caution.',
-	evidence: [
-		{
-			title: 'BLEP fallback',
-			url: fallbackEvidenceUrl,
-			quote_or_fact: 'Fallback result used when live scrape, quota, or model validation fails.',
-			relevance: 'Keeps demo stable without pretending external research happened.'
-		}
-	]
-});
+export const buildFallbackVerdict = (query = 'Unknown device'): BlepVerdict =>
+	blepVerdictSchema.parse({
+		name: query.trim() || 'Unknown device',
+		verdict: 'CAUTION',
+		landfill_year: 2028,
+		fatal_flaw: 'Research failed before BLEP could prove value.',
+		specs: {
+			upgradeable: false,
+			thermal: 'Unknown thermal behavior.',
+			forum_score: 5
+		},
+		roast: 'Not enough evidence. Wallet should stay in cave.',
+		summary: 'BLEP could not complete scan, so verdict falls back to caution.',
+		evidence: [
+			{
+				title: 'BLEP fallback',
+				url: fallbackEvidenceUrl,
+				quote_or_fact: 'Fallback result used when live scrape, quota, or model validation fails.',
+				relevance: 'Keeps demo stable without pretending external research happened.'
+			}
+		]
+	});
+
+export const fallbackVerdict: BlepVerdict = buildFallbackVerdict();
 
 export const buildMockVerdict = (query: string, urls: string[] = []): BlepVerdict => {
 	const evidenceUrl = urls[0] ?? fallbackEvidenceUrl;

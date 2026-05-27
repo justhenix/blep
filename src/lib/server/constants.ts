@@ -1,0 +1,4 @@
+export const BLEP_FIRECRAWL_REQUEST_TIMEOUT_MS = 20_000;
+export const BLEP_SOURCE_MARKDOWN_MAX_CHARS = 3500;
+export const BLEP_MAX_SOURCES = 5;
+export const BLEP_MIN_LIVE_SOURCES = 1;
