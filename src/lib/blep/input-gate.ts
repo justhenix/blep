@@ -22,8 +22,7 @@ const DENY_PHRASES = [
 	'jailbreak',
 	'roleplay',
 	'pretend you are',
-	'developer message',
-	'write code'
+	'developer message'
 ] as const;
 
 const UNSUPPORTED_CATEGORY_TERMS = [
@@ -122,12 +121,21 @@ const WORKLOAD_TERMS = [
 	'school'
 ] as const;
 
-const SPEC_PATTERNS = [
-	/\b\d{1,3}\s?(gb|tb)\b/i,
-	/\bddr[2-5]\b/i,
-	/\bnvme\b/i,
-	/\bi[3579]-\d{4,5}[a-z]*\b/i,
-	/\b(rtx|gtx)\s?\d{3,4}\b/i
+const SPEC_PATTERNS = [/\b\d{1,3}\s?(gb|tb)\b/i, /\bddr[2-5]\b/i, /\bnvme\b/i] as const;
+
+const MODEL_PATTERNS = [
+	/\bryzen\s?[3579]\s?\d{4}[a-z]*\b/i,
+	/\br[3579]\s?\d{4}[a-z]*\b/i,
+	/\bi[3579][-\s]?\d{4,5}[a-z]*\b/i,
+	/\bcore\s?i[3579]\b/i,
+	/\bintel\s+core\s+(ultra\s+)?[3579]\b/i,
+	/\bcore\s+(ultra\s+)?[3579]\b/i,
+	/\bcore\s+(ultra\s+)?[3579]\s+\d{3}[a-z]?\b/i,
+	/\b(m1|m2|m3|m4)\b/i,
+	/\b(rtx|gtx|rx)\s?\d{3,4}\b/i,
+	/\buhd\s?graphics\b/i,
+	/\biris\s?xe\b/i,
+	/\b\d{4,5}(hs|hx|kf|u|h|g|x|f|k|p)\b/i
 ] as const;
 
 const MARKETPLACE_HOST_TERMS = [
@@ -201,6 +209,7 @@ const TECH_PATH_TERMS = [
 	'gtx'
 ] as const;
 
+const SHORT_HARDWARE_PATTERNS = [/\bm[1-4]\b/i, /\bhp\b/i, /\bpc\b/i] as const;
 const repeatedPunctuationPattern = /[!?.,:;]{2,}/g;
 const whitespacePattern = /\s+/g;
 const urlPattern = /https?:\/\/[^\s]+/gi;
@@ -210,6 +219,9 @@ const tokenPattern = /[a-z0-9]+(?:-[a-z0-9]+)?/g;
 const digitPattern = /\d/;
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const withGlobal = (pattern: RegExp) =>
+	new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
 
 const termPattern = (term: string) => {
 	const pattern = escapeRegExp(term).replace(/\s+/g, '\\s+');
@@ -227,6 +239,7 @@ const PLATFORM_PATTERNS = toTermPatterns(PLATFORM_TERMS);
 const BUYING_INTENT_PATTERNS = toTermPatterns(BUYING_INTENT_TERMS);
 const WORKLOAD_PATTERNS = toTermPatterns(WORKLOAD_TERMS);
 const TECH_PATH_PATTERNS = toTermPatterns(TECH_PATH_TERMS);
+const SPEC_HIT_PATTERNS = SPEC_PATTERNS.map(withGlobal);
 
 const normalizeScanInput = (query: string) =>
 	query
@@ -248,6 +261,9 @@ const parseUrl = (value: string): URL | null => {
 
 const countTermScore = (text: string, patterns: readonly RegExp[], points: number) =>
 	patterns.reduce((score, pattern) => score + (pattern.test(text) ? points : 0), 0);
+
+const countPatternHits = (text: string, patterns: readonly RegExp[]) =>
+	patterns.reduce((hits, pattern) => hits + (text.match(pattern)?.length ?? 0), 0);
 
 const extractUrlCandidates = (query: string, urls: string[]) => [
 	...new Set([...urls, ...(query.match(urlPattern) ?? [])])
@@ -312,8 +328,10 @@ const allowed = (
 export function classifyScanInput(query: string, urls: string[] = []): ScanInputGateResult {
 	const normalized = normalizeScanInput(query);
 	const meaningfulLength = (normalized.match(meaningfulPattern) ?? []).length;
+	const hasShortHardware = hasPattern(normalized, SHORT_HARDWARE_PATTERNS);
 
-	if (!normalized || meaningfulLength < 3) {
+	// deny-first
+	if (!normalized || (meaningfulLength < 3 && !hasShortHardware)) {
 		return denied('too_short', 0, true);
 	}
 
@@ -321,18 +339,20 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 		return denied('prompt_injection', 0, true);
 	}
 
+	// score hardware evidence
 	const directHardwareScore = countTermScore(normalized, HARDWARE_PATTERNS, 3);
 	const brandScore = countTermScore(normalized, BRAND_PATTERNS, 3);
-	const chipScore = countTermScore(normalized, PLATFORM_PATTERNS, 2);
-	const specScore = SPEC_PATTERNS.reduce(
-		(score, pattern) => score + (pattern.test(normalized) ? 2 : 0),
-		0
-	);
-	const hardwareScore = directHardwareScore + brandScore + chipScore + specScore;
+	const platformScore = countTermScore(normalized, PLATFORM_PATTERNS, 2);
+	const modelScore = countTermScore(normalized, MODEL_PATTERNS, 3);
+	const chipModelScore = platformScore + modelScore;
+	const specHits = countPatternHits(normalized, SPEC_HIT_PATTERNS);
+	const specScore = specHits * 2 + (specHits >= 2 ? 1 : 0);
+	const hardwareScore = directHardwareScore + brandScore + platformScore + modelScore;
 	const buyingScore = countTermScore(normalized, BUYING_INTENT_PATTERNS, 2);
 	const workloadScore = hardwareScore > 0 ? countTermScore(normalized, WORKLOAD_PATTERNS, 1) : 0;
 	const urlScore = scoreUrls(normalized, urls);
-	const score = hardwareScore + buyingScore + workloadScore + urlScore.score;
+	const score = hardwareScore + specScore + buyingScore + workloadScore + urlScore.score;
+	const hasHardwareEvidence = hardwareScore + specScore > 0;
 
 	if (normalized === 'ambatukam') {
 		return denied('non_tech', score, true);
@@ -343,7 +363,7 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 	}
 
 	if (
-		hardwareScore === 0 &&
+		!hasHardwareEvidence &&
 		!urlScore.hasTechUrl &&
 		hasPattern(normalized, UNSUPPORTED_CATEGORY_PATTERNS)
 	) {
@@ -355,13 +375,19 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 	if (
 		tokens.length === 1 &&
 		!digitPattern.test(normalized) &&
-		hardwareScore === 0 &&
+		!hasHardwareEvidence &&
 		!urlScore.hasTechUrl
 	) {
 		return denied('non_tech', score, true);
 	}
 
-	if (score >= 3 || (score >= 2 && urlScore.hasTechUrl)) {
+	// decide
+	if (
+		score >= 3 ||
+		chipModelScore >= 3 ||
+		(hardwareScore >= 2 && buyingScore + workloadScore + specScore >= 1) ||
+		(score >= 2 && urlScore.hasTechUrl)
+	) {
 		return allowed(
 			urlScore.hasTechUrl && hardwareScore === 0 ? 'tech_listing_url' : 'tech_hardware',
 			score
