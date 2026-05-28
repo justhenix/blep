@@ -75,8 +75,8 @@ Request:
 
 ```json
 {
-  "query": "ThinkPad T480 used laptop",
-  "urls": ["https://example.com/listing"]
+	"query": "ThinkPad T480 used laptop",
+	"urls": ["https://example.com/listing"]
 }
 ```
 
@@ -84,40 +84,40 @@ Response:
 
 ```json
 {
-  "ok": true,
-  "mode": "live",
-  "cached": false,
-  "quota": {
-    "remaining": 1,
-    "limit": 2
-  },
-  "sources": [
-    {
-      "title": "Example source",
-      "url": "https://example.com/source"
-    }
-  ],
-  "verdict": {
-    "name": "ThinkPad T480",
-    "verdict": "APPROVED",
-    "landfill_year": 2029,
-    "fatal_flaw": "Base panel quality can be poor.",
-    "specs": {
-      "upgradeable": true,
-      "thermal": "Generally manageable for daily use.",
-      "forum_score": 8
-    },
-    "roast": "It is old, but not dead.",
-    "summary": "A repairable used laptop that can still make sense if priced correctly.",
-    "evidence": [
-      {
-        "title": "Example source",
-        "url": "https://example.com/source",
-        "quote_or_fact": "Example fact from source.",
-        "relevance": "Explains why the verdict was chosen."
-      }
-    ]
-  }
+	"ok": true,
+	"mode": "live",
+	"cached": false,
+	"quota": {
+		"remaining": 1,
+		"limit": 2
+	},
+	"sources": [
+		{
+			"title": "Example source",
+			"url": "https://example.com/source"
+		}
+	],
+	"verdict": {
+		"name": "ThinkPad T480",
+		"verdict": "APPROVED",
+		"landfill_year": 2029,
+		"fatal_flaw": "Base panel quality can be poor.",
+		"specs": {
+			"upgradeable": true,
+			"thermal": "Generally manageable for daily use.",
+			"forum_score": 8
+		},
+		"roast": "It is old, but not dead.",
+		"summary": "A repairable used laptop that can still make sense if priced correctly.",
+		"evidence": [
+			{
+				"title": "Example source",
+				"url": "https://example.com/source",
+				"quote_or_fact": "Example fact from source.",
+				"relevance": "Explains why the verdict was chosen."
+			}
+		]
+	}
 }
 ```
 
@@ -128,30 +128,30 @@ Response:
 
 ```ts
 type BlepVerdict = {
-  name: string;
+	name: string;
 
-  verdict: "APPROVED" | "CAUTION" | "WASTE";
+	verdict: 'APPROVED' | 'CAUTION' | 'WASTE';
 
-  landfill_year: number;
+	landfill_year: number;
 
-  fatal_flaw: string;
+	fatal_flaw: string;
 
-  specs: {
-    upgradeable: boolean;
-    thermal: string;
-    forum_score: number;
-  };
+	specs: {
+		upgradeable: boolean;
+		thermal: string;
+		forum_score: number;
+	};
 
-  roast: string;
+	roast: string;
 
-  summary: string;
+	summary: string;
 
-  evidence: {
-    title: string;
-    url: string;
-    quote_or_fact: string;
-    relevance: string;
-  }[];
+	evidence: {
+		title: string;
+		url: string;
+		quote_or_fact: string;
+		relevance: string;
+	}[];
 };
 ```
 

@@ -1,3 +1,5 @@
+import type { ScanInputGateReason } from './input-gate';
+
 export type BlepVerdict = {
 	name: string;
 	verdict: 'APPROVED' | 'CAUTION' | 'WASTE';
@@ -68,10 +70,24 @@ export type BlepFallbackScanResponse = BlepQuota & {
 	verdict: BlepVerdict;
 };
 
+export type BlepDeclinedScanResponse = BlepQuota & {
+	ok: false;
+	mode: 'declined';
+	error: 'non_tech_input';
+	cached?: false;
+	gate?: {
+		reason: ScanInputGateReason;
+		confidence: 'high' | 'medium' | 'low';
+	};
+	sources: [];
+	verdict: BlepVerdict;
+};
+
 export type BlepScanResponse =
 	| BlepLiveScanResponse
 	| BlepMockScanResponse
-	| BlepFallbackScanResponse;
+	| BlepFallbackScanResponse
+	| BlepDeclinedScanResponse;
 
 export type BlepQuotaCheck = {
 	allowed: boolean;

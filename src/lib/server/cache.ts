@@ -24,20 +24,24 @@ export type CacheLookupResult =
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
-const normalizeQuery = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+const safeErrorCode = (error: unknown) =>
+	error && typeof error === 'object' && 'code' in error
+		? String((error as { code: unknown }).code)
+		: 'unknown';
 
-const normalizeUrls = (urls: string[]) =>
-	[...urls]
+const normalizeCacheInput = ({ query, urls }: CacheKeyInput) => ({
+	query: query.trim().toLowerCase().replace(/\s+/g, ' '),
+	urls: [...urls]
 		.map((url) => url.trim())
 		.filter(Boolean)
 		.map((url) => url.replace(/\/+$/u, '').toLowerCase())
-		.sort();
+		.sort()
+});
 
 export const buildCacheKey = ({ query, urls }: CacheKeyInput) => {
-	const normalizedQuery = normalizeQuery(query);
-	const normalizedUrls = normalizeUrls(urls);
-	const queryHash = sha256(`q:${normalizedQuery}`);
-	const urlsHash = sha256(`u:${normalizedUrls.join('|')}`);
+	const normalized = normalizeCacheInput({ query, urls });
+	const queryHash = sha256(`q:${normalized.query}`);
+	const urlsHash = sha256(`u:${normalized.urls.join('|')}`);
 	const cacheKey = sha256(`${queryHash}::${urlsHash}::${blepEnv.promptVersion}`);
 
 	return { cacheKey, queryHash, urlsHash };
@@ -101,13 +105,7 @@ export const lookupCache = async ({ query, urls }: CacheKeyInput): Promise<Cache
 			sources
 		};
 	} catch (error) {
-		console.warn(
-			`[blep cache] lookup failed code=${
-				error && typeof error === 'object' && 'code' in error
-					? String((error as { code: unknown }).code)
-					: 'unknown'
-			}`
-		);
+		console.warn(`[blep cache] lookup failed code=${safeErrorCode(error)}`);
 		return { hit: false, cacheKey };
 	}
 };
@@ -142,13 +140,7 @@ export const storeCache = async (
 
 		return cacheKey;
 	} catch (error) {
-		console.warn(
-			`[blep cache] store failed code=${
-				error && typeof error === 'object' && 'code' in error
-					? String((error as { code: unknown }).code)
-					: 'unknown'
-			}`
-		);
+		console.warn(`[blep cache] store failed code=${safeErrorCode(error)}`);
 
 		return cacheKey;
 	}

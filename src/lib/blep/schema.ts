@@ -44,7 +44,7 @@ export const blepVerdictSchema = z
 
 export const blepScanRequestSchema = z
 	.object({
-		query: z.string().trim().min(1).max(500),
+		query: z.string().trim().max(500),
 		urls: z.array(z.string().trim().url()).max(5).optional()
 	})
 	.strict();

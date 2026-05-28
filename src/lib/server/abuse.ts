@@ -18,6 +18,11 @@ const docId = (identityHash: string) => `${identityHash}_${todayKey()}`;
 
 const expiryMs = () => Date.now() + 25 * 60 * 60 * 1000;
 
+const safeErrorCode = (error: unknown) =>
+	error && typeof error === 'object' && 'code' in error
+		? String((error as { code: unknown }).code)
+		: 'unknown';
+
 const millis = (value: unknown) => {
 	if (value instanceof Timestamp) return value.toMillis();
 	if (typeof value === 'number') return value;
@@ -89,13 +94,7 @@ export const checkAndRecordAbuse = async (identityHash: string): Promise<AbuseCh
 			} as const;
 		});
 	} catch (error) {
-		console.warn(
-			`[blep abuse] check failed code=${
-				error && typeof error === 'object' && 'code' in error
-					? String((error as { code: unknown }).code)
-					: 'unknown'
-			}`
-		);
+		console.warn(`[blep abuse] check failed code=${safeErrorCode(error)}`);
 
 		return { allowed: true, remaining: limit, limit };
 	}

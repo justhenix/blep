@@ -48,6 +48,9 @@
 		}, 650);
 	};
 
+	const isDeclinedResponse = (response: BlepScanResponse) =>
+		response.mode === 'declined' || ('error' in response && response.error === 'non_tech_input');
+
 	const submitScan = async (event: SubmitEvent) => {
 		event.preventDefault();
 
@@ -74,7 +77,7 @@
 
 			if ('verdict' in data) {
 				result = data;
-				errorMessage = data.ok ? '' : data.error;
+				errorMessage = data.ok || isDeclinedResponse(data) ? '' : data.error;
 			} else {
 				errorMessage = data.message ?? data.error ?? 'Scan failed.';
 			}
@@ -153,49 +156,58 @@
 			</div>
 
 			{#if result}
-				<article class="rounded-3xl border-4 border-black bg-white p-5 shadow-[8px_8px_0_#000]">
-					<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-						<div>
-							<p class="text-xs font-black tracking-[0.3em] uppercase">{result.mode}</p>
-							<h2 class="text-4xl font-black">{result.verdict.verdict}</h2>
+				{#if isDeclinedResponse(result)}
+					<article class="rounded-3xl border-4 border-black bg-white p-5 shadow-[8px_8px_0_#000]">
+						<p class="text-xs font-black tracking-[0.3em] uppercase">OUT OF SCOPE</p>
+						<p class="mt-3 font-mono text-sm">
+							BLEP only judges tech hardware. Try a laptop, phone, PC part, or listing URL.
+						</p>
+					</article>
+				{:else}
+					<article class="rounded-3xl border-4 border-black bg-white p-5 shadow-[8px_8px_0_#000]">
+						<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<p class="text-xs font-black tracking-[0.3em] uppercase">{result.mode}</p>
+								<h2 class="text-4xl font-black">{result.verdict.verdict}</h2>
+							</div>
+							<p class="rounded-full border-4 border-black px-4 py-2 text-sm font-black">
+								quota {result.quota.remaining}/{result.quota.limit}
+							</p>
 						</div>
-						<p class="rounded-full border-4 border-black px-4 py-2 text-sm font-black">
-							quota {result.quota.remaining}/{result.quota.limit}
-						</p>
-					</div>
 
-					<div class="grid gap-3 font-mono text-sm">
-						<p><strong>landfill year:</strong> {result.verdict.landfill_year}</p>
-						<p><strong>fatal flaw:</strong> {result.verdict.fatal_flaw}</p>
-						<p>
-							<strong>specs:</strong>
-							upgradeable {result.verdict.specs.upgradeable ? 'yes' : 'no'}; thermal
-							{result.verdict.specs.thermal}; forum score {result.verdict.specs.forum_score}/10
-						</p>
-						<p><strong>roast:</strong> {result.verdict.roast}</p>
-						<p><strong>summary:</strong> {result.verdict.summary}</p>
-					</div>
+						<div class="grid gap-3 font-mono text-sm">
+							<p><strong>landfill year:</strong> {result.verdict.landfill_year}</p>
+							<p><strong>fatal flaw:</strong> {result.verdict.fatal_flaw}</p>
+							<p>
+								<strong>specs:</strong>
+								upgradeable {result.verdict.specs.upgradeable ? 'yes' : 'no'}; thermal
+								{result.verdict.specs.thermal}; forum score {result.verdict.specs.forum_score}/10
+							</p>
+							<p><strong>roast:</strong> {result.verdict.roast}</p>
+							<p><strong>summary:</strong> {result.verdict.summary}</p>
+						</div>
 
-					<div class="mt-5">
-						<h3 class="mb-2 text-sm font-black uppercase">evidence</h3>
-						<ul class="grid gap-3">
-							{#each result.verdict.evidence as evidence (`${evidence.url}-${evidence.title}`)}
-								<li class="rounded-2xl border-2 border-black p-3">
-									<a
-										class="font-black underline"
-										href={evidence.url}
-										target="_blank"
-										rel="external noreferrer"
-									>
-										{evidence.title}
-									</a>
-									<p class="mt-1 font-mono text-xs">{evidence.quote_or_fact}</p>
-									<p class="mt-1 text-xs">{evidence.relevance}</p>
-								</li>
-							{/each}
-						</ul>
-					</div>
-				</article>
+						<div class="mt-5">
+							<h3 class="mb-2 text-sm font-black uppercase">evidence</h3>
+							<ul class="grid gap-3">
+								{#each result.verdict.evidence as evidence (`${evidence.url}-${evidence.title}`)}
+									<li class="rounded-2xl border-2 border-black p-3">
+										<a
+											class="font-black underline"
+											href={evidence.url}
+											target="_blank"
+											rel="external noreferrer"
+										>
+											{evidence.title}
+										</a>
+										<p class="mt-1 font-mono text-xs">{evidence.quote_or_fact}</p>
+										<p class="mt-1 text-xs">{evidence.relevance}</p>
+									</li>
+								{/each}
+							</ul>
+						</div>
+					</article>
+				{/if}
 			{:else}
 				<div class="rounded-3xl border-4 border-black bg-white p-5 shadow-[8px_8px_0_#000]">
 					<p class="font-mono text-sm">submit device. get verdict. avoid regret purchase.</p>

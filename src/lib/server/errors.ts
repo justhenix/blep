@@ -2,6 +2,7 @@ export type BlepErrorCode =
 	| 'bad_json'
 	| 'bad_input'
 	| 'bad_auth'
+	| 'non_tech_input'
 	| 'quota_blocked'
 	| 'cooldown'
 	| 'rate_limited'

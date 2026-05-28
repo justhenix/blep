@@ -1,5 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import {
+	classifyScanInput,
+	createDeclineVerdict,
+	type ScanInputGateResult
+} from '$lib/blep/input-gate';
 import { buildFallbackVerdict, buildMockVerdict } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
 import type { BlepQuotaCheck, BlepScanResponse, BlepSource, BlepVerdict } from '$lib/blep/types';
@@ -76,6 +81,22 @@ const buildLiveResponse = (
 	verdict
 });
 
+const buildDeclinedResponse = (gate: ScanInputGateResult): BlepScanResponse => ({
+	ok: false,
+	mode: 'declined',
+	error: 'non_tech_input',
+	gate: {
+		reason: gate.reason,
+		confidence: gate.confidence
+	},
+	quota: {
+		remaining: 999,
+		limit: 999
+	},
+	sources: [],
+	verdict: createDeclineVerdict()
+});
+
 const respond = <T>(body: T, init?: ResponseInit) => {
 	const mode =
 		body && typeof body === 'object' && 'mode' in body
@@ -85,7 +106,9 @@ const respond = <T>(body: T, init?: ResponseInit) => {
 		body && typeof body === 'object' && 'cached' in body
 			? Boolean((body as { cached: unknown }).cached)
 			: false;
-	console.info(`[blep api] final mode=${mode} cached=${cached}`);
+	if (mode !== 'declined') {
+		console.info(`[blep api] final mode=${mode} cached=${cached}`);
+	}
 
 	return json(body, init);
 };
@@ -130,9 +153,6 @@ const logSafeError = (label: string, error: unknown) => {
 };
 
 export const POST: RequestHandler = async ({ request }) => {
-	console.info('[blep api] scan started');
-	logEnvStatus();
-
 	let body: unknown;
 
 	try {
@@ -182,15 +202,30 @@ export const POST: RequestHandler = async ({ request }) => {
 		);
 	}
 
-	const queryForFallback = parsed.data.query;
+	const query = parsed.data.query;
 	const requestUrls = parsed.data.urls ?? [];
-	let quota = defaultQuota();
 
-	if (blepEnv.useMock) {
-		console.info('[blep mock] returning mock verdict, no external calls');
-		return respond(buildMockResponse(parsed.data.query, requestUrls, mockQuota()));
+	// Cost-free guard: decline before mock/cache/quota/abuse/paid calls.
+	const gate = classifyScanInput(query, requestUrls);
+
+	if (!gate.allowed) {
+		console.info(`[blep gate] declined reason=${gate.reason} confidence=${gate.confidence}`);
+
+		return respond(buildDeclinedResponse(gate));
 	}
 
+	console.info('[blep api] scan started');
+	logEnvStatus();
+
+	let quota = defaultQuota();
+
+	// Mock exits before external services.
+	if (blepEnv.useMock) {
+		console.info('[blep mock] returning mock verdict, no external calls');
+		return respond(buildMockResponse(query, requestUrls, mockQuota()));
+	}
+
+	// Paid path starts here.
 	const identity = getRequestIdentity(request);
 	logIdentity(identity);
 
@@ -217,12 +252,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		logQuotaStatus(quota);
 
 		if (!quota.allowed) {
-			return respond(buildFallbackResponse('quota_blocked', quota, queryForFallback), {
+			return respond(buildFallbackResponse('quota_blocked', quota, query), {
 				status: 429
 			});
 		}
 
-		const cacheLookup = await lookupCache({ query: parsed.data.query, urls: requestUrls });
+		const cacheLookup = await lookupCache({ query, urls: requestUrls });
 
 		if (cacheLookup.hit) {
 			console.info(`[blep cache] hit key=${cacheLookup.cacheKey.slice(0, 12)}...`);
@@ -236,42 +271,40 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		if (!abuse.allowed) {
 			return respond(
-				buildFallbackResponse(abuse.reason, quota, queryForFallback, [], abuse.retryAfterSeconds),
+				buildFallbackResponse(abuse.reason, quota, query, [], abuse.retryAfterSeconds),
 				{ status: 429 }
 			);
 		}
 
-		const sourceResult = await collectSources(parsed.data.query, requestUrls);
+		const sourceResult = await collectSources(query, requestUrls);
 		logScrapeStatus(sourceResult.status, sourceResult.sources);
 		const sources = sourceSummaries(sourceResult.sources);
 
 		if (sourceResult.status !== 'ok') {
-			return respond(buildFallbackResponse(sourceResult.status, quota, queryForFallback, sources));
+			return respond(buildFallbackResponse(sourceResult.status, quota, query, sources));
 		}
 
 		let verdict: BlepVerdict;
 		try {
-			({ verdict } = await generateVerdict(parsed.data.query, sourceResult.sources));
+			({ verdict } = await generateVerdict(query, sourceResult.sources));
 		} catch (error) {
-			return respond(
-				buildFallbackResponse(getGeminiErrorCode(error), quota, queryForFallback, sources)
-			);
+			return respond(buildFallbackResponse(getGeminiErrorCode(error), quota, query, sources));
 		}
 
 		quota = await consumeDailyQuota(quotaSubject);
 		logQuotaStatus(quota);
 
 		if (!quota.allowed) {
-			return respond(buildFallbackResponse('quota_blocked', quota, queryForFallback, sources), {
+			return respond(buildFallbackResponse('quota_blocked', quota, query, sources), {
 				status: 429
 			});
 		}
 
-		await storeCache({ query: parsed.data.query, urls: requestUrls }, verdict, sources);
+		await storeCache({ query, urls: requestUrls }, verdict, sources);
 
 		return respond(buildLiveResponse(quota, sources, verdict, false));
 	} catch (error) {
 		logSafeError('live_error', error);
-		return respond(buildFallbackResponse('unknown', quota, queryForFallback));
+		return respond(buildFallbackResponse('unknown', quota, query));
 	}
 };
