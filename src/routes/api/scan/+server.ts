@@ -113,10 +113,18 @@ const respond = <T>(body: T, init?: ResponseInit) => {
 	return json(body, init);
 };
 
+const buildApiErrorResponse = (error: BlepErrorCode) => ({
+	ok: false,
+	error
+});
+
 const sourceSummaries = (sources: BlepSource[]) =>
 	sources.map((source) => ({ title: source.title, url: source.url }));
 
 const safeTitle = (title: string) => title.replace(/\s+/g, ' ').trim().slice(0, 120);
+
+const safeLogValue = (value: unknown) =>
+	String(value).replace(/\s+/g, ' ').trim().slice(0, 80) || 'unknown';
 
 const logEnvStatus = () => {
 	console.info(
@@ -145,11 +153,23 @@ const logIdentity = (identity: RequestIdentity) => {
 const logSafeError = (label: string, error: unknown) => {
 	const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
 	const parts = ['name', 'code', 'reason', 'domain']
-		.map((key) => (record[key] ? `${key}=${String(record[key])}` : ''))
+		.map((key) => (record[key] ? `${key}=${safeLogValue(record[key])}` : ''))
 		.filter(Boolean)
 		.join(' ');
 
 	console.warn(`[blep api] ${label}${parts ? ` ${parts}` : ''}`);
+};
+
+const logApiErrorCode = (label: string, code: BlepErrorCode, status: number) => {
+	console.warn(`[blep api] ${label} code=${code} status=${status}`);
+};
+
+const logInputIssues = (issues: Array<{ path: PropertyKey[]; code: string }>) => {
+	const paths = issues.map((issue) => issue.path.join('.') || 'body').slice(0, 5);
+	const codes = issues.map((issue) => issue.code).slice(0, 5);
+	console.warn(
+		`[blep api] bad_input issue_count=${issues.length} paths=${JSON.stringify(paths)} codes=${JSON.stringify(codes)}`
+	);
 };
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -159,22 +179,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		body = await safeParseJson(request);
 	} catch (error) {
 		if (error instanceof BlepApiError) {
+			logApiErrorCode('request_error', error.code, error.status);
+
 			return respond(
-				{
-					ok: false,
-					error: error.code,
-					message: error.publicMessage
-				},
+				buildApiErrorResponse(error.code),
 				{ status: error.status }
 			);
 		}
 
+		logSafeError('json_error', error);
+
 		return respond(
-			{
-				ok: false,
-				error: 'bad_json',
-				message: 'Send valid JSON body.'
-			},
+			buildApiErrorResponse('bad_json'),
 			{ status: 400 }
 		);
 	}
@@ -182,22 +198,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	const parsed = blepScanRequestSchema.safeParse(body);
 
 	if (!parsed.success) {
-		const inputError = blepError(
-			'bad_input',
-			400,
-			'Send JSON body with query string and optional urls array.'
-		);
+		const inputError = blepError('bad_input', 400);
+		logInputIssues(parsed.error.issues);
 
 		return respond(
-			{
-				ok: false,
-				error: inputError.code,
-				message: inputError.publicMessage,
-				issues: parsed.error.issues.map((issue) => ({
-					path: issue.path.join('.'),
-					message: issue.message
-				}))
-			},
+			buildApiErrorResponse(inputError.code),
 			{ status: 400 }
 		);
 	}
@@ -232,15 +237,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	let decodedToken: Awaited<ReturnType<typeof verifyBearerToken>>;
 	try {
 		decodedToken = await verifyBearerToken(request.headers.get('authorization'));
-	} catch {
-		const authError = blepError('bad_auth', 401, 'Use Authorization: Bearer <Firebase ID token>.');
+	} catch (error) {
+		logSafeError('auth_error', error);
+		const authError = blepError('bad_auth', 401);
 
 		return respond(
-			{
-				ok: false,
-				error: authError.code,
-				message: authError.publicMessage
-			},
+			buildApiErrorResponse(authError.code),
 			{ status: authError.status }
 		);
 	}

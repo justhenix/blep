@@ -51,6 +51,15 @@
 	const isDeclinedResponse = (response: BlepScanResponse) =>
 		response.mode === 'declined' || ('error' in response && response.error === 'non_tech_input');
 
+	const safeEvidenceUrl = (value: string) => {
+		try {
+			const url = new URL(value);
+			return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : '';
+		} catch {
+			return '';
+		}
+	};
+
 	const submitScan = async (event: SubmitEvent) => {
 		event.preventDefault();
 
@@ -192,14 +201,19 @@
 							<ul class="grid gap-3">
 								{#each result.verdict.evidence as evidence (`${evidence.url}-${evidence.title}`)}
 									<li class="rounded-2xl border-2 border-black p-3">
-										<a
-											class="font-black underline"
-											href={evidence.url}
-											target="_blank"
-											rel="external noreferrer"
-										>
-											{evidence.title}
-										</a>
+										{#if safeEvidenceUrl(evidence.url)}
+											<a
+												class="font-black underline"
+												href={safeEvidenceUrl(evidence.url)}
+												target="_blank"
+												rel="noopener noreferrer external nofollow"
+											>
+												{evidence.title}
+											</a>
+										{:else}
+											<p class="font-black">{evidence.title}</p>
+											<p class="mt-1 break-all font-mono text-xs">{evidence.url}</p>
+										{/if}
 										<p class="mt-1 font-mono text-xs">{evidence.quote_or_fact}</p>
 										<p class="mt-1 text-xs">{evidence.relevance}</p>
 									</li>

@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+const httpUrlSchema = z
+	.string()
+	.trim()
+	.url()
+	.refine((value) => {
+		try {
+			const url = new URL(value);
+			return url.protocol === 'http:' || url.protocol === 'https:';
+		} catch {
+			return false;
+		}
+	}, 'URL must use http or https');
+
 const maxSentenceCount = (value: string, max: number) => {
 	const text = value.trim();
 	if (!text) return false;
@@ -13,7 +26,7 @@ const maxSentenceCount = (value: string, max: number) => {
 export const blepEvidenceSchema = z
 	.object({
 		title: z.string().trim().min(1),
-		url: z.string().trim().url(),
+		url: httpUrlSchema,
 		quote_or_fact: z.string().trim().min(1),
 		relevance: z.string().trim().min(1)
 	})
@@ -45,6 +58,6 @@ export const blepVerdictSchema = z
 export const blepScanRequestSchema = z
 	.object({
 		query: z.string().trim().max(500),
-		urls: z.array(z.string().trim().url()).max(5).optional()
+		urls: z.array(httpUrlSchema).max(5).optional()
 	})
 	.strict();
