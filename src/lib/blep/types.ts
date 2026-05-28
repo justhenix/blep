@@ -39,6 +39,7 @@ export type BlepQuota = {
 export type BlepLiveScanResponse = BlepQuota & {
 	ok: true;
 	mode: 'live';
+	cached?: boolean;
 	sources: {
 		title: string;
 		url: string;
@@ -49,6 +50,7 @@ export type BlepLiveScanResponse = BlepQuota & {
 export type BlepMockScanResponse = BlepQuota & {
 	ok: true;
 	mode: 'mock';
+	cached?: false;
 	sources: [];
 	verdict: BlepVerdict;
 };
@@ -57,6 +59,8 @@ export type BlepFallbackScanResponse = BlepQuota & {
 	ok: false;
 	mode: 'fallback';
 	error: string;
+	cached?: false;
+	retry_after_seconds?: number;
 	sources: {
 		title: string;
 		url: string;

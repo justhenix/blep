@@ -3,24 +3,34 @@ import type { RequestHandler } from './$types';
 import { buildFallbackVerdict, buildMockVerdict } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
 import type { BlepQuotaCheck, BlepScanResponse, BlepSource, BlepVerdict } from '$lib/blep/types';
+import { checkAndRecordAbuse } from '$lib/server/abuse';
+import { lookupCache, storeCache } from '$lib/server/cache';
 import { blepEnv } from '$lib/server/env';
 import { BlepApiError, blepError, safeParseJson, type BlepErrorCode } from '$lib/server/errors';
 import { collectSources } from '$lib/server/firecrawl';
 import { verifyBearerToken } from '$lib/server/firebase-admin';
 import { generateVerdict, getGeminiErrorCode } from '$lib/server/gemini';
-import { checkDailyQuota, consumeDailyQuota, hashClientAddress } from '$lib/server/quota';
+import { checkDailyQuota, consumeDailyQuota } from '$lib/server/quota';
+import { getRequestIdentity, type RequestIdentity } from '$lib/server/request-identity';
 
 const defaultQuota = (): BlepQuotaCheck => ({
 	allowed: true,
-	remaining: Math.max(blepEnv.dailyLimit - 1, 0),
+	remaining: blepEnv.dailyLimit,
 	limit: blepEnv.dailyLimit
+});
+
+const mockQuota = (): BlepQuotaCheck => ({
+	allowed: true,
+	remaining: 999,
+	limit: 999
 });
 
 const buildFallbackResponse = (
 	error: BlepErrorCode,
 	quota: BlepQuotaCheck = defaultQuota(),
 	query = 'Unknown device',
-	sources: { title: string; url: string }[] = []
+	sources: { title: string; url: string }[] = [],
+	retryAfterSeconds?: number
 ): BlepScanResponse => ({
 	ok: false,
 	mode: 'fallback',
@@ -30,7 +40,8 @@ const buildFallbackResponse = (
 		limit: quota.limit
 	},
 	sources,
-	verdict: buildFallbackVerdict(query)
+	verdict: buildFallbackVerdict(query),
+	...(typeof retryAfterSeconds === 'number' ? { retry_after_seconds: retryAfterSeconds } : {})
 });
 
 const buildMockResponse = (
@@ -48,21 +59,15 @@ const buildMockResponse = (
 	verdict: buildMockVerdict(query, urls)
 });
 
-const getClientAddressSafe = (getClientAddress: () => string) => {
-	try {
-		return getClientAddress();
-	} catch {
-		return null;
-	}
-};
-
 const buildLiveResponse = (
 	quota: BlepQuotaCheck,
 	sources: { title: string; url: string }[],
-	verdict: BlepVerdict
+	verdict: BlepVerdict,
+	cached = false
 ): BlepScanResponse => ({
 	ok: true,
 	mode: 'live',
+	cached,
 	quota: {
 		remaining: quota.remaining,
 		limit: quota.limit
@@ -76,7 +81,12 @@ const respond = <T>(body: T, init?: ResponseInit) => {
 		body && typeof body === 'object' && 'mode' in body
 			? String((body as { mode: unknown }).mode)
 			: 'error';
-	console.info(`[blep api] final mode=${mode}`);
+	const cached =
+		body && typeof body === 'object' && 'cached' in body
+			? Boolean((body as { cached: unknown }).cached)
+			: false;
+	console.info(`[blep api] final mode=${mode} cached=${cached}`);
+
 	return json(body, init);
 };
 
@@ -87,7 +97,7 @@ const safeTitle = (title: string) => title.replace(/\s+/g, ' ').trim().slice(0, 
 
 const logEnvStatus = () => {
 	console.info(
-		`[blep env] gemini=${Boolean(blepEnv.geminiApiKey)} firecrawl=${Boolean(blepEnv.firecrawlApiKey)} firebase=${Boolean(blepEnv.firebaseProjectId || blepEnv.googleApplicationCredentials)}`
+		`[blep env] gemini=${Boolean(blepEnv.geminiApiKey)} firecrawl=${Boolean(blepEnv.firecrawlApiKey)} firebase=${Boolean(blepEnv.firebaseProjectId || blepEnv.googleApplicationCredentials)} mock=${blepEnv.useMock}`
 	);
 };
 
@@ -103,6 +113,12 @@ const logScrapeStatus = (status: string, sources: BlepSource[]) => {
 	);
 };
 
+const logIdentity = (identity: RequestIdentity) => {
+	console.info(
+		`[blep identity] ip_source=${identity.ipSource} identity_hash=${identity.identityHash.slice(0, 8)}... ua=${identity.userAgentFamily}`
+	);
+};
+
 const logSafeError = (label: string, error: unknown) => {
 	const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
 	const parts = ['name', 'code', 'reason', 'domain']
@@ -113,7 +129,7 @@ const logSafeError = (label: string, error: unknown) => {
 	console.warn(`[blep api] ${label}${parts ? ` ${parts}` : ''}`);
 };
 
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+export const POST: RequestHandler = async ({ request }) => {
 	console.info('[blep api] scan started');
 	logEnvStatus();
 
@@ -167,12 +183,16 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	}
 
 	const queryForFallback = parsed.data.query;
+	const requestUrls = parsed.data.urls ?? [];
 	let quota = defaultQuota();
 
 	if (blepEnv.useMock) {
-		logQuotaStatus(quota);
-		return respond(buildMockResponse(parsed.data.query, parsed.data.urls ?? [], quota));
+		console.info('[blep mock] returning mock verdict, no external calls');
+		return respond(buildMockResponse(parsed.data.query, requestUrls, mockQuota()));
 	}
+
+	const identity = getRequestIdentity(request);
+	logIdentity(identity);
 
 	let decodedToken: Awaited<ReturnType<typeof verifyBearerToken>>;
 	try {
@@ -191,8 +211,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	}
 
 	try {
-		const clientAddress = getClientAddressSafe(getClientAddress);
-		const quotaSubject = decodedToken?.uid ?? hashClientAddress(clientAddress);
+		const quotaSubject = decodedToken?.uid ?? identity.identityHash;
 
 		quota = await checkDailyQuota(quotaSubject);
 		logQuotaStatus(quota);
@@ -203,14 +222,31 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			});
 		}
 
-		const sourceResult = await collectSources(parsed.data.query, parsed.data.urls);
+		const cacheLookup = await lookupCache({ query: parsed.data.query, urls: requestUrls });
+
+		if (cacheLookup.hit) {
+			console.info(`[blep cache] hit key=${cacheLookup.cacheKey.slice(0, 12)}...`);
+
+			return respond(buildLiveResponse(quota, cacheLookup.sources, cacheLookup.verdict, true));
+		}
+
+		console.info(`[blep cache] miss key=${cacheLookup.cacheKey.slice(0, 12)}...`);
+
+		const abuse = await checkAndRecordAbuse(identity.identityHash);
+
+		if (!abuse.allowed) {
+			return respond(
+				buildFallbackResponse(abuse.reason, quota, queryForFallback, [], abuse.retryAfterSeconds),
+				{ status: 429 }
+			);
+		}
+
+		const sourceResult = await collectSources(parsed.data.query, requestUrls);
 		logScrapeStatus(sourceResult.status, sourceResult.sources);
 		const sources = sourceSummaries(sourceResult.sources);
 
 		if (sourceResult.status !== 'ok') {
-			return respond(
-				buildFallbackResponse(sourceResult.status, quota, queryForFallback, sources)
-			);
+			return respond(buildFallbackResponse(sourceResult.status, quota, queryForFallback, sources));
 		}
 
 		let verdict: BlepVerdict;
@@ -231,7 +267,9 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			});
 		}
 
-		return respond(buildLiveResponse(quota, sources, verdict));
+		await storeCache({ query: parsed.data.query, urls: requestUrls }, verdict, sources);
+
+		return respond(buildLiveResponse(quota, sources, verdict, false));
 	} catch (error) {
 		logSafeError('live_error', error);
 		return respond(buildFallbackResponse('unknown', quota, queryForFallback));

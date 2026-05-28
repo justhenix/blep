@@ -3,6 +3,8 @@ export type BlepErrorCode =
 	| 'bad_input'
 	| 'bad_auth'
 	| 'quota_blocked'
+	| 'cooldown'
+	| 'rate_limited'
 	| 'mock_mode_enabled'
 	| 'firecrawl_failed'
 	| 'no_sources'

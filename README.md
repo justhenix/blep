@@ -40,3 +40,15 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## Backend hardening
+
+Cheap defenses sit in front of paid Firecrawl + Gemini calls:
+
+- **Mock mode** - `BLEP_USE_MOCK=true` short-circuits before any external call. Frontend can polish UI for free.
+- **Query cache** - Firestore `scan_cache/{cacheKey}` keyed by `sha256(query :: urls :: promptVersion)`. TTL via `BLEP_CACHE_TTL_HOURS` (default 24h). Cache hits skip paid calls and quota consume.
+- **Privacy-safe identity** - IP and User-Agent become one salted SHA-256 hash. Raw IP is never stored or logged.
+- **Cooldown + abuse cap** - `BLEP_COOLDOWN_SECONDS` between uncached requests per identity hash; `BLEP_ABUSE_DAILY_LIMIT` daily ceiling per identity hash. Both stored in Firestore `abuse/{identityHash_date}`.
+- **Daily quota** - `BLEP_DAILY_LIMIT` per UID or identity hash, only consumed after valid uncached live verdict.
+
+See [`docs/dev-api.md`](docs/dev-api.md) for the full pipeline + error codes.

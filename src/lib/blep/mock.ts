@@ -28,11 +28,35 @@ export const buildFallbackVerdict = (query = 'Unknown device'): BlepVerdict =>
 
 export const fallbackVerdict: BlepVerdict = buildFallbackVerdict();
 
-export const buildMockVerdict = (query: string, urls: string[] = []): BlepVerdict => {
-	const evidenceUrl = urls[0] ?? fallbackEvidenceUrl;
+type MockVerdictKind = 'APPROVED' | 'CAUTION' | 'WASTE';
 
-	return blepVerdictSchema.parse({
-		name: query,
+const matchesAny = (haystack: string, needles: string[]) =>
+	needles.some((needle) => haystack.includes(needle));
+
+const classifyMockQuery = (query: string): MockVerdictKind => {
+	const lower = query.toLowerCase();
+
+	if (matchesAny(lower, ['t480', 'thinkpad'])) return 'APPROVED';
+	if (matchesAny(lower, ['acer aspire', 'ddr2', '1gb', 'hdd'])) return 'WASTE';
+	if (matchesAny(lower, ['axioo', 'blender', '8gb'])) return 'CAUTION';
+
+	return 'CAUTION';
+};
+
+const mockVerdictPresets: Record<MockVerdictKind, Omit<BlepVerdict, 'name' | 'evidence'>> = {
+	APPROVED: {
+		verdict: 'APPROVED',
+		landfill_year: 2032,
+		fatal_flaw: 'Battery wear typical for age but otherwise solid foundation.',
+		specs: {
+			upgradeable: true,
+			thermal: 'Cool under daily load, fans audible only on sustained CPU stress.',
+			forum_score: 9
+		},
+		roast: 'Boring, beige, brilliant. Cave wallet survives another season.',
+		summary: 'Mock APPROVED verdict: classic upgrade-friendly chassis with strong forum reputation.'
+	},
+	CAUTION: {
 		verdict: 'CAUTION',
 		landfill_year: 2029,
 		fatal_flaw: 'Mock scan sees limited upgrade path and unclear long-term value.',
@@ -43,10 +67,33 @@ export const buildMockVerdict = (query: string, urls: string[] = []): BlepVerdic
 		},
 		roast: 'Looks useful until specs start sweating. Buy only if price is cave-cheap.',
 		summary:
-			'Mock BLEP verdict: usable for demo flow, but real purchase advice needs Firecrawl evidence and Gemini validation.',
+			'Mock CAUTION verdict: usable for demo flow, but real purchase advice needs Firecrawl evidence and Gemini validation.'
+	},
+	WASTE: {
+		verdict: 'WASTE',
+		landfill_year: 2026,
+		fatal_flaw: 'Soldered RAM, mechanical HDD, and dated CPU make this a landfill ticket.',
+		specs: {
+			upgradeable: false,
+			thermal: 'Throttles fast, fans loud, paste likely cooked.',
+			forum_score: 2
+		},
+		roast: 'E-waste cosplaying as a laptop. Cave says: walk away, save wallet.',
+		summary: 'Mock WASTE verdict: heuristic flagged outdated specs and known-bad family.'
+	}
+};
+
+export const buildMockVerdict = (query: string, urls: string[] = []): BlepVerdict => {
+	const evidenceUrl = urls[0] ?? fallbackEvidenceUrl;
+	const kind = classifyMockQuery(query);
+	const preset = mockVerdictPresets[kind];
+
+	return blepVerdictSchema.parse({
+		name: query.trim() || 'Unknown device',
+		...preset,
 		evidence: [
 			{
-				title: 'Mock evidence source',
+				title: `Mock evidence (${kind.toLowerCase()})`,
 				url: evidenceUrl,
 				quote_or_fact: 'Mock mode is active; no live web research was performed.',
 				relevance: 'Proves response shape and validation path before AI integration.'

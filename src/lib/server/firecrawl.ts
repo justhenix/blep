@@ -174,8 +174,7 @@ export const collectSources = async (
 	const scraped = await Promise.allSettled(provided.map(scrapeUrl));
 	const sources = scraped
 		.filter(
-			(result): result is PromiseFulfilledResult<BlepSource | null> =>
-				result.status === 'fulfilled'
+			(result): result is PromiseFulfilledResult<BlepSource | null> => result.status === 'fulfilled'
 		)
 		.map((result) => result.value)
 		.filter((source): source is BlepSource => Boolean(source));
