@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Description><dc:creator>RealFaviconGenerator</dc:creator><dc:source>https://realfavicongenerator.net</dc:source></rdf:Description></rdf:RDF></metadata><style>
+    #light-icon {
+      display: inline;
+    }
+    #dark-icon {
+      display: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #light-icon {
+        display: none;
+      }
+      #dark-icon {
+        display: inline;
+      }
+    }
+  </style><g id="light-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g><g transform="matrix(1.107493299665537,0,0,1.107493299665537,22.498726382705456,5.684341886080802e-14)"><svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" data-name="Layer 1" viewBox="0 0 862.31 902.94" width="862.31" height="902.94"><defs><style>.cls-1{fill:none;stroke-width:60px;}.cls-1,.cls-2{stroke:#000;stroke-miterlimit:10;}.cls-2{stroke-width:20px;}</style></defs><title>favicon-ai white</title><polygon class="cls-1" points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28"></polygon><line class="cls-1" x1="33.36" y1="297.37" x2="201.17" y2="357.78"></line><polygon class="cls-2" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14"></polygon><polygon class="cls-2" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48"></polygon></svg></g></g></svg></g><g id="dark-icon"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g><g transform="matrix(1.107493299665537,0,0,1.107493299665537,22.498726382705456,5.684341886080802e-14)"><svg xmlns="http://www.w3.org/2000/svg" id="Layer_1" data-name="Layer 1" viewBox="0 0 862.31 902.94" width="862.31" height="902.94"><defs><style>.cls-1{fill:none;stroke-width:60px;}.cls-1,.cls-2{stroke:#fff;stroke-miterlimit:10;}.cls-2{fill:#fff;stroke-width:20px;}</style></defs><title>favicon-ai-white</title><polygon class="cls-1" points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28"></polygon><line class="cls-1" x1="33.36" y1="297.37" x2="201.17" y2="357.78"></line><polygon class="cls-2" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14"></polygon><polygon class="cls-2" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48"></polygon></svg></g></g></svg></g></svg>
