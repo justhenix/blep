@@ -46,15 +46,28 @@ export type BlepLiveScanResponse = BlepQuota & {
 	verdict: BlepVerdict;
 };
 
-export type BlepFallbackScanResponse = BlepQuota & {
-	ok: false;
-	mode: 'fallback';
-	error: string;
+export type BlepMockScanResponse = BlepQuota & {
+	ok: true;
+	mode: 'mock';
 	sources: [];
 	verdict: BlepVerdict;
 };
 
-export type BlepScanResponse = BlepLiveScanResponse | BlepFallbackScanResponse;
+export type BlepFallbackScanResponse = BlepQuota & {
+	ok: false;
+	mode: 'fallback';
+	error: string;
+	sources: {
+		title: string;
+		url: string;
+	}[];
+	verdict: BlepVerdict;
+};
+
+export type BlepScanResponse =
+	| BlepLiveScanResponse
+	| BlepMockScanResponse
+	| BlepFallbackScanResponse;
 
 export type BlepQuotaCheck = {
 	allowed: boolean;

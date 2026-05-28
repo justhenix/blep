@@ -19,6 +19,21 @@ export const checkDailyQuota = async (subject: string): Promise<BlepQuotaCheck> 
 	const date = todayKey();
 	const db = getFirebaseDb();
 	const doc = db.collection('quotas').doc(`${safeDocId(subject)}_${date}`);
+	const snap = await doc.get();
+	const used = snap.exists ? Number(snap.get('used') ?? 0) : 0;
+
+	return {
+		allowed: used < limit,
+		remaining: Math.max(limit - used, 0),
+		limit
+	};
+};
+
+export const consumeDailyQuota = async (subject: string): Promise<BlepQuotaCheck> => {
+	const limit = blepEnv.dailyLimit;
+	const date = todayKey();
+	const db = getFirebaseDb();
+	const doc = db.collection('quotas').doc(`${safeDocId(subject)}_${date}`);
 
 	return db.runTransaction(async (tx) => {
 		const snap = await tx.get(doc);

@@ -2,10 +2,13 @@ export type BlepErrorCode =
 	| 'bad_json'
 	| 'bad_input'
 	| 'bad_auth'
-	| 'quota_exhausted'
+	| 'quota_blocked'
 	| 'mock_mode_enabled'
-	| 'live_scrape_failed'
-	| 'live_scan_failed';
+	| 'firecrawl_failed'
+	| 'no_sources'
+	| 'gemini_failed'
+	| 'schema_failed'
+	| 'unknown';
 
 export class BlepApiError extends Error {
 	constructor(

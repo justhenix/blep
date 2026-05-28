@@ -4,7 +4,17 @@ import { blepVerdictSchema } from '$lib/blep/schema';
 import type { BlepSource, BlepVerdict } from '$lib/blep/types';
 import { blepEnv } from './env';
 
-class GeminiValidationError extends Error {}
+export type GeminiFailureCode = 'gemini_failed' | 'schema_failed';
+
+class GeminiVerdictError extends Error {
+	constructor(
+		readonly code: GeminiFailureCode,
+		readonly stage: 'call' | 'parse' | 'schema'
+	) {
+		super(code);
+		this.name = 'GeminiVerdictError';
+	}
+}
 
 const verdictResponseSchema: Schema = {
 	type: Type.OBJECT,
@@ -63,7 +73,7 @@ const verdictResponseSchema: Schema = {
 };
 
 const getClient = () => {
-	if (!blepEnv.geminiApiKey) throw new Error('gemini_missing_key');
+	if (!blepEnv.geminiApiKey) throw new GeminiVerdictError('gemini_failed', 'call');
 
 	return new GoogleGenAI({ apiKey: blepEnv.geminiApiKey });
 };
@@ -75,45 +85,84 @@ const stripJsonFence = (text: string) =>
 		.replace(/^```\s*/i, '')
 		.replace(/\s*```$/i, '');
 
-const parseGeminiVerdict = (text: string, sources: BlepSource[]): BlepVerdict => {
-	try {
-		const parsed: unknown = JSON.parse(stripJsonFence(text));
-		const verdict = blepVerdictSchema.parse(parsed);
-		const sourceUrls = new Set(sources.map((source) => source.url));
+const extractJsonText = (text: string) => {
+	const stripped = stripJsonFence(text);
+	const firstBrace = stripped.indexOf('{');
+	const lastBrace = stripped.lastIndexOf('}');
 
-		for (const evidence of verdict.evidence) {
-			if (!sourceUrls.has(evidence.url)) {
-				throw new Error('evidence_source_mismatch');
-			}
-		}
-
-		return verdict;
-	} catch {
-		throw new GeminiValidationError('gemini_invalid_json_or_schema');
+	if (firstBrace < 0 || lastBrace <= firstBrace) {
+		throw new GeminiVerdictError('schema_failed', 'parse');
 	}
+
+	return stripped.slice(firstBrace, lastBrace + 1);
+};
+
+const parseGeminiVerdict = (text: string, sources: BlepSource[]): BlepVerdict => {
+	let parsed: unknown;
+
+	try {
+		parsed = JSON.parse(extractJsonText(text));
+	} catch {
+		throw new GeminiVerdictError('schema_failed', 'parse');
+	}
+
+	const schemaResult = blepVerdictSchema.safeParse(parsed);
+	if (!schemaResult.success) {
+		throw new GeminiVerdictError('schema_failed', 'schema');
+	}
+
+	const verdict = schemaResult.data;
+	const sourceUrls = new Set(sources.map((source) => source.url));
+
+	for (const evidence of verdict.evidence) {
+		if (!sourceUrls.has(evidence.url)) {
+			throw new GeminiVerdictError('schema_failed', 'schema');
+		}
+	}
+
+	return verdict;
 };
 
 const generateWithModel = async (model: string, query: string, sources: BlepSource[]) => {
 	const ai = getClient();
-	const response = await ai.models.generateContent({
-		model,
-		contents: buildBlepPrompt(query, sources),
-		config: {
-			systemInstruction: BLEP_SYSTEM_PROMPT,
-			responseMimeType: 'application/json',
-			responseSchema: verdictResponseSchema,
-			temperature: 0.2,
-			maxOutputTokens: 1600
-		}
-	});
+	let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
+
+	try {
+		response = await ai.models.generateContent({
+			model,
+			contents: buildBlepPrompt(query, sources),
+			config: {
+				systemInstruction: BLEP_SYSTEM_PROMPT,
+				responseMimeType: 'application/json',
+				responseSchema: verdictResponseSchema,
+				temperature: 0.2,
+				candidateCount: 1,
+				maxOutputTokens: 1600
+			}
+		});
+	} catch {
+		console.info(`[blep gemini] model=${model} call=failed parse=skipped schema=skipped`);
+		throw new GeminiVerdictError('gemini_failed', 'call');
+	}
 
 	const text = response.text;
-	if (!text) throw new GeminiValidationError('gemini_empty_response');
+	if (!text) {
+		console.info(`[blep gemini] model=${model} call=ok parse=failed schema=skipped`);
+		throw new GeminiVerdictError('schema_failed', 'parse');
+	}
 
-	const verdict = parseGeminiVerdict(text, sources);
-	console.info(`[blep gemini] model used ${model}`);
+	try {
+		const verdict = parseGeminiVerdict(text, sources);
+		console.info(`[blep gemini] model=${model} call=ok parse=ok schema=ok`);
 
-	return { verdict, model };
+		return { verdict, model };
+	} catch (error) {
+		const stage = error instanceof GeminiVerdictError ? error.stage : 'schema';
+		console.info(
+			`[blep gemini] model=${model} call=ok parse=${stage === 'parse' ? 'failed' : 'ok'} schema=${stage === 'schema' ? 'failed' : 'skipped'}`
+		);
+		throw error;
+	}
 };
 
 export const generateVerdict = async (
@@ -121,13 +170,25 @@ export const generateVerdict = async (
 	sources: BlepSource[]
 ): Promise<{ verdict: BlepVerdict; model: string }> => {
 	const primaryModel = blepEnv.demoMode ? blepEnv.geminiModelDemo : blepEnv.geminiModelMain;
+	const models = [primaryModel, blepEnv.geminiModelBackup].filter(
+		(model, index, all) => all.indexOf(model) === index
+	);
+	let lastError: GeminiVerdictError | null = null;
 
-	try {
-		return await generateWithModel(primaryModel, query, sources);
-	} catch (error) {
-		if (!(error instanceof GeminiValidationError)) throw error;
-		if (blepEnv.geminiModelBackup === primaryModel) throw error;
+	for (const model of models) {
+		try {
+			return await generateWithModel(model, query, sources);
+		} catch (error) {
+			if (!(error instanceof GeminiVerdictError)) {
+				throw new GeminiVerdictError('gemini_failed', 'call');
+			}
 
-		return generateWithModel(blepEnv.geminiModelBackup, query, sources);
+			lastError = error;
+		}
 	}
+
+	throw lastError ?? new GeminiVerdictError('gemini_failed', 'call');
 };
+
+export const getGeminiErrorCode = (error: unknown): GeminiFailureCode =>
+	error instanceof GeminiVerdictError ? error.code : 'gemini_failed';

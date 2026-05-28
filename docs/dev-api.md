@@ -14,6 +14,12 @@ curl -X POST http://localhost:5173/api/scan \
   -d "{\"query\":\"ThinkPad T480 used laptop\",\"urls\":[\"https://example.com/listing\"]}"
 ```
 
+PowerShell scan:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:5173/api/scan" -ContentType "application/json" -Body '{"query":"ThinkPad T480 used laptop"}'
+```
+
 Optional auth:
 
 ```sh

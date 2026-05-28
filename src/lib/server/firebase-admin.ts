@@ -1,7 +1,12 @@
-import { applicationDefault, getApps, initializeApp, type App } from 'firebase-admin/app';
+import { applicationDefault, cert, getApps, initializeApp, type App } from 'firebase-admin/app';
 import { getAuth, type Auth, type DecodedIdToken } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { blepEnv } from './env';
+
+const getFirebaseCredential = () =>
+	blepEnv.googleApplicationCredentials
+		? cert(blepEnv.googleApplicationCredentials)
+		: applicationDefault();
 
 const getFirebaseApp = (): App => {
 	const [app] = getApps();
@@ -9,7 +14,7 @@ const getFirebaseApp = (): App => {
 	if (app) return app;
 
 	return initializeApp({
-		credential: applicationDefault(),
+		credential: getFirebaseCredential(),
 		projectId: blepEnv.firebaseProjectId || undefined
 	});
 };
