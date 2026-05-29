@@ -227,10 +227,7 @@ const extractJsonText = (text: string) => {
 	return stripped.slice(firstBrace, lastBrace + 1);
 };
 
-const assertEvidenceFromSources = (
-	evidence: { url: string }[],
-	sources: BlepSource[]
-) => {
+const assertEvidenceFromSources = (evidence: { url: string }[], sources: BlepSource[]) => {
 	const sourceUrls = new Set(sources.map((source) => source.url));
 
 	for (const item of evidence) {
@@ -392,12 +389,13 @@ export const generateVerdict = async (
 	query: string,
 	sources: BlepSource[]
 ): Promise<{ verdict: BlepVerdict; model: string }> => {
-	const { result, model } = await runWithFallback(
-		verdictConfig,
-		query,
-		sources,
-		{ intent: 'VERDICT_SCAN', budget_idr: null, use_case: null, category: 'laptop', devices: [] }
-	);
+	const { result, model } = await runWithFallback(verdictConfig, query, sources, {
+		intent: 'VERDICT_SCAN',
+		budget_idr: null,
+		use_case: null,
+		category: 'laptop',
+		devices: []
+	});
 
 	return { verdict: result, model };
 };

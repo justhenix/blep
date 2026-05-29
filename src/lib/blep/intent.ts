@@ -1,8 +1,4 @@
-export type BlepIntent =
-	| 'VERDICT_SCAN'
-	| 'RECOMMENDATION_SCAN'
-	| 'COMPARISON_SCAN'
-	| 'NEEDS_INPUT';
+export type BlepIntent = 'VERDICT_SCAN' | 'RECOMMENDATION_SCAN' | 'COMPARISON_SCAN' | 'NEEDS_INPUT';
 
 export type BlepIntentResult = {
 	intent: BlepIntent;
@@ -79,7 +75,8 @@ const normalize = (query: string) => query.toLowerCase().replace(/\s+/g, ' ').tr
 const hasTerm = (text: string, term: string) =>
 	new RegExp(`\\b${term.replace(/\s+/g, '\\s+')}\\b`, 'i').test(text);
 
-const hasAny = (text: string, terms: readonly string[]) => terms.some((term) => hasTerm(text, term));
+const hasAny = (text: string, terms: readonly string[]) =>
+	terms.some((term) => hasTerm(text, term));
 
 export const parseIndonesianBudget = (query: string): number | null => {
 	const text = normalize(query);
@@ -134,16 +131,24 @@ export function routeIntent(query: string, urls: string[] = []): BlepIntentResul
 	const budget_idr = parseIndonesianBudget(query);
 	const use_case = detectUseCase(text);
 	const category = detectCategory(text);
+	const hasUrls = urls.length > 0;
 
 	const base = { budget_idr, use_case, category, devices: [] as string[] };
 
 	const comparisonByWord = hasAny(text, ['vs', 'versus', 'mending', 'compare', 'pilih mana']);
 	const devices = splitComparisonDevices(query);
+	const comparisonByUrls = urls.length >= 2;
 	// `atau` only counts as comparison when it actually splits two candidates.
-	const comparison = comparisonByWord || (hasTerm(text, 'atau') && devices.length >= 2);
+	const comparison =
+		comparisonByWord || comparisonByUrls || (hasTerm(text, 'atau') && devices.length >= 2);
 
 	if (comparison) {
-		return { ...base, intent: 'COMPARISON_SCAN', devices };
+		const comparedDevices = devices.length > 0 ? devices : urls.slice(0, 4);
+		return { ...base, intent: 'COMPARISON_SCAN', devices: comparedDevices };
+	}
+
+	if (hasUrls) {
+		return { ...base, intent: 'VERDICT_SCAN' };
 	}
 
 	const hasRecoKeyword = hasAny(text, RECOMMENDATION_TRIGGERS);

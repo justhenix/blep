@@ -192,10 +192,7 @@ export const buildMockRecommendation = (
 	});
 };
 
-export const buildMockComparison = (
-	query: string,
-	intent: BlepIntentResult
-): BlepComparison => {
+export const buildMockComparison = (query: string, intent: BlepIntentResult): BlepComparison => {
 	const [first, second] = intent.devices;
 	const winner = first || 'Option A';
 	const loser = second || 'Option B';

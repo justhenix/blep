@@ -3,7 +3,9 @@
 </svelte:head>
 
 <main class="min-h-screen bg-neutral-100 px-4 py-6 text-black sm:px-6 lg:px-8">
-	<article class="mx-auto max-w-3xl rounded-3xl border-4 border-black bg-white p-5 shadow-[8px_8px_0_#000] sm:p-7">
+	<article
+		class="mx-auto max-w-3xl rounded-3xl border-4 border-black bg-white p-5 shadow-[8px_8px_0_#000] sm:p-7"
+	>
 		<p class="mb-2 text-xs font-black tracking-[0.35em] uppercase">BLEP PRIVACY</p>
 		<h1 class="text-4xl leading-none font-black tracking-tight">Privacy Policy</h1>
 		<p class="mt-3 font-mono text-sm">Draft for hackathon demo. Last updated: May 28, 2026.</p>
@@ -20,17 +22,18 @@
 			<div>
 				<h2 class="mb-2 text-base font-black">Live Mode Services</h2>
 				<p>
-					In live mode, BLEP may send your query, source page content, and related source metadata to
-					Firecrawl and Gemini. Mock mode uses local mock results and does not call those services.
+					In live mode, BLEP may send your query, source page content, and related source metadata
+					to Firecrawl and Gemini. Mock mode uses local mock results and does not call those
+					services.
 				</p>
 			</div>
 
 			<div>
 				<h2 class="mb-2 text-base font-black">Quota, Cache, Abuse Data</h2>
 				<p>
-					Firebase/Firestore may store quota, cache, and abuse-control metadata. The backend is built
-					to hash request identity for quota and abuse checks, so raw IP addresses should not be stored
-					by BLEP application code.
+					Firebase/Firestore may store quota, cache, and abuse-control metadata. The backend is
+					built to hash request identity for quota and abuse checks, so raw IP addresses should not
+					be stored by BLEP application code.
 				</p>
 			</div>
 
@@ -51,8 +54,8 @@
 			<div>
 				<h2 class="mb-2 text-base font-black">Demo Disclaimer</h2>
 				<p>
-					BLEP is a hackathon/demo prototype. Privacy controls are kept simple for launch and should be
-					reviewed before any real public production rollout.
+					BLEP is a hackathon/demo prototype. Privacy controls are kept simple for launch and should
+					be reviewed before any real public production rollout.
 				</p>
 			</div>
 
