@@ -1,1 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Space+Grotesk:wght@400..700&display=swap');
+
 @import 'tailwindcss';
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "Space Grotesk", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --color-paper: #fbfaf8;
+  --color-paper-dark: #f4f2eb;
+  --color-ink: #111111;
+  --color-brand-green: #10b981;
+  --color-brand-red: #ef4444;
+  --color-brand-yellow: #f59e0b;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: #fbfaf8;
+  color: #111111;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Custom utilities for soft brutalism */
+.soft-border {
+  border: 1.5px solid #111111;
+}
+
+.soft-shadow-sm {
+  box-shadow: 3px 3px 0px 0px #111111;
+}
+
+.soft-shadow {
+  box-shadow: 6px 6px 0px 0px #111111;
+}
+
+.soft-shadow-lg {
+  box-shadow: 10px 10px 0px 0px #111111;
+}
+
+.soft-shadow-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.soft-shadow-hover:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 8px 8px 0px 0px #111111;
+}
+.soft-shadow-hover:active {
+  transform: translate(0px, 0px);
+  box-shadow: 4px 4px 0px 0px #111111;
+}
+
+/* Grids and backgrounds */
+.paper-grid-light {
+  background-color: #fbfaf8;
+  background-image: 
+    linear-gradient(rgba(17, 17, 17, 0.035) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, rgba(17, 17, 17, 0.035) 1.5px, transparent 1.5px);
+  background-size: 28px 28px;
+}
+
+.mascot-blueprint {
+  background-color: #111111;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 20px 20px;
+}

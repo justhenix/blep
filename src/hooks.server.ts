@@ -1,11 +1,12 @@
 import { env } from '$env/dynamic/private';
 import type { Handle } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 
 const cspDirectives = [
 	"default-src 'self'",
 	"base-uri 'self'",
 	"object-src 'none'",
-	"script-src 'self'",
+	dev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self'",
 	"style-src 'self' 'unsafe-inline'",
 	"img-src 'self' data: blob:",
 	"font-src 'self' data:",
