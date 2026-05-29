@@ -399,6 +399,7 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 
 export function createDeclineVerdict(currentYear = new Date().getFullYear()): BlepVerdict {
 	return {
+		mode: 'VERDICT',
 		name: 'Not a hardware listing',
 		verdict: 'CAUTION',
 		landfill_year: currentYear,

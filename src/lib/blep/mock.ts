@@ -1,5 +1,17 @@
-import { blepVerdictSchema } from './schema';
-import type { BlepVerdict } from './types';
+import {
+	blepComparisonSchema,
+	blepNeedsInputSchema,
+	blepRecommendationSchema,
+	blepVerdictSchema
+} from './schema';
+import type { BlepIntentResult } from './intent';
+import type {
+	BlepComparison,
+	BlepNeedsInput,
+	BlepPhase1Output,
+	BlepRecommendation,
+	BlepVerdict
+} from './types';
 
 const fallbackEvidenceUrl = 'https://example.com/blep/mock-evidence';
 
@@ -43,7 +55,10 @@ const classifyMockQuery = (query: string): MockVerdictKind => {
 	return 'CAUTION';
 };
 
-const mockVerdictPresets: Record<MockVerdictKind, Omit<BlepVerdict, 'name' | 'evidence'>> = {
+const mockVerdictPresets: Record<
+	MockVerdictKind,
+	Omit<BlepVerdict, 'mode' | 'name' | 'evidence'>
+> = {
 	APPROVED: {
 		verdict: 'APPROVED',
 		landfill_year: 2032,
@@ -100,4 +115,145 @@ export const buildMockVerdict = (query: string, urls: string[] = []): BlepVerdic
 			}
 		]
 	});
+};
+
+const formatIdr = (value: number | null) =>
+	value === null ? 'sesuai listing' : `Rp${value.toLocaleString('id-ID')}`;
+
+export const buildMockRecommendation = (
+	query: string,
+	intent: BlepIntentResult
+): BlepRecommendation => {
+	const useCase = intent.use_case ?? 'general use';
+	const budgetLabel = formatIdr(intent.budget_idr);
+
+	return blepRecommendationSchema.parse({
+		query: query.trim() || 'rekomendasi laptop',
+		parsed_need: {
+			category: intent.category,
+			use_case: useCase,
+			budget_idr: intent.budget_idr,
+			market: 'Indonesia',
+			hard_constraints: []
+		},
+		recommendation_summary: `Mock recommendation for ${useCase} around ${budgetLabel}. Live mode adds current listing evidence.`,
+		target_specs: {
+			cpu: 'Ryzen 5 / Core i5 H-series (8 cores)',
+			gpu: 'RTX 4050 minimum for gaming',
+			ram: '16GB dual-channel',
+			storage: '512GB NVMe SSD',
+			screen: '15.6" 144Hz IPS',
+			thermal: 'Dual-fan with acceptable sustained clocks',
+			upgradeability: 'Free RAM slot + spare M.2'
+		},
+		picks: [
+			{
+				label: 'BEST_OVERALL',
+				name: 'Target: RTX 4050 / 16GB / 144Hz class',
+				expected_price_idr: intent.budget_idr,
+				why: 'Hits the playable-modern-games bracket without overpaying for badge GPUs.',
+				caveat: 'Mock pick. Exact model depends on live listing evidence.',
+				evidence_refs: [0]
+			},
+			{
+				label: 'CHEAPER_SAFE',
+				name: 'Target: RTX 3050 / 16GB if much cheaper',
+				expected_price_idr: null,
+				why: 'Acceptable when non-GPU value (panel, build, RAM) is strong.',
+				caveat: 'Only if the price gap is real, not marketing.',
+				evidence_refs: [0]
+			}
+		],
+		avoid: [
+			{
+				pattern: 'GTX 1650 / RTX 2050 above 10-11 juta',
+				reason: 'Old GPU tier at premium price; loses to RTX 4050 class.'
+			},
+			{
+				pattern: '8GB soldered single-channel RAM',
+				reason: 'Kills multitasking and cannot be fixed later.'
+			}
+		],
+		deal_rules: [
+			'Demand RTX 4050+ at this budget before paying.',
+			'Reject 8GB soldered RAM as a final config.',
+			'Check sustained thermals, not just peak benchmarks.'
+		],
+		evidence: [
+			{
+				title: 'Mock recommendation evidence',
+				url: fallbackEvidenceUrl,
+				quote_or_fact: 'Mock mode active; no live market research was performed.',
+				relevance: 'Proves recommendation card shape before live integration.'
+			}
+		],
+		confidence: 'LOW',
+		next_action: 'Send 2 listing links and BLEP will judge the final pick.'
+	});
+};
+
+export const buildMockComparison = (
+	query: string,
+	intent: BlepIntentResult
+): BlepComparison => {
+	const [first, second] = intent.devices;
+	const winner = first || 'Option A';
+	const loser = second || 'Option B';
+
+	return blepComparisonSchema.parse({
+		query: query.trim() || 'comparison',
+		winner,
+		loser,
+		verdict: 'CLOSE_CALL',
+		reason: `Mock comparison: ${winner} edges ${loser} on value, but live evidence decides the final call.`,
+		compared: [
+			{
+				name: winner,
+				price_idr: null,
+				strengths: ['Better sustained thermals (mock)', 'Stronger forum reputation (mock)'],
+				flaws: ['Mock data only'],
+				verdict: 'CAUTION'
+			},
+			{
+				name: loser,
+				price_idr: null,
+				strengths: ['Possibly cheaper (mock)'],
+				flaws: ['Weaker cooling (mock)', 'Mock data only'],
+				verdict: 'CAUTION'
+			}
+		],
+		evidence: [
+			{
+				title: 'Mock comparison evidence',
+				url: fallbackEvidenceUrl,
+				quote_or_fact: 'Mock mode active; no live comparison research was performed.',
+				relevance: 'Proves comparison card shape before live integration.'
+			}
+		],
+		confidence: 'LOW'
+	});
+};
+
+export const buildMockNeedsInput = (): BlepNeedsInput =>
+	blepNeedsInputSchema.parse({
+		reason: 'No budget or use case. BLEP cannot judge market value safely.',
+		questions: ['Budget berapa?', 'Dipakai buat apa paling berat?'],
+		examples: ['rekomendasi laptop gaming 15 juta', 'laptop kuliah 8 juta buat coding']
+	});
+
+export const buildMockOutput = (
+	query: string,
+	urls: string[],
+	intent: BlepIntentResult
+): BlepPhase1Output => {
+	switch (intent.intent) {
+		case 'RECOMMENDATION_SCAN':
+			return buildMockRecommendation(query, intent);
+		case 'COMPARISON_SCAN':
+			return buildMockComparison(query, intent);
+		case 'NEEDS_INPUT':
+			return buildMockNeedsInput();
+		default:
+			return buildMockVerdict(query, urls);
+	}
 };

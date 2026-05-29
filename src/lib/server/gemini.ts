@@ -1,7 +1,25 @@
 import { GoogleGenAI, Type, type Schema } from '@google/genai';
-import { buildBlepPrompt, BLEP_SYSTEM_PROMPT } from '$lib/blep/prompt';
-import { blepVerdictSchema } from '$lib/blep/schema';
-import type { BlepSource, BlepVerdict } from '$lib/blep/types';
+import {
+	BLEP_COMPARISON_SYSTEM_PROMPT,
+	BLEP_RECOMMENDATION_SYSTEM_PROMPT,
+	BLEP_SYSTEM_PROMPT,
+	buildBlepPrompt,
+	buildComparisonPrompt,
+	buildRecommendationPrompt
+} from '$lib/blep/prompt';
+import {
+	blepComparisonSchema,
+	blepRecommendationSchema,
+	blepVerdictSchema
+} from '$lib/blep/schema';
+import type { BlepIntentResult } from '$lib/blep/intent';
+import type {
+	BlepComparison,
+	BlepPhase1Output,
+	BlepRecommendation,
+	BlepSource,
+	BlepVerdict
+} from '$lib/blep/types';
 import { blepEnv } from './env';
 
 export type GeminiFailureCode = 'gemini_failed' | 'schema_failed';
@@ -15,6 +33,17 @@ class GeminiVerdictError extends Error {
 		this.name = 'GeminiVerdictError';
 	}
 }
+
+const evidenceItemSchema: Schema = {
+	type: Type.OBJECT,
+	required: ['title', 'url', 'quote_or_fact', 'relevance'],
+	properties: {
+		title: { type: Type.STRING },
+		url: { type: Type.STRING },
+		quote_or_fact: { type: Type.STRING },
+		relevance: { type: Type.STRING }
+	}
+};
 
 const verdictResponseSchema: Schema = {
 	type: Type.OBJECT,
@@ -58,17 +87,118 @@ const verdictResponseSchema: Schema = {
 			type: Type.ARRAY,
 			minItems: '1',
 			maxItems: '5',
+			items: evidenceItemSchema
+		}
+	}
+};
+
+const recommendationResponseSchema: Schema = {
+	type: Type.OBJECT,
+	required: [
+		'query',
+		'parsed_need',
+		'recommendation_summary',
+		'target_specs',
+		'picks',
+		'avoid',
+		'deal_rules',
+		'evidence',
+		'confidence',
+		'next_action'
+	],
+	properties: {
+		query: { type: Type.STRING },
+		parsed_need: {
+			type: Type.OBJECT,
+			required: ['category', 'use_case', 'budget_idr', 'market', 'hard_constraints'],
+			properties: {
+				category: { type: Type.STRING },
+				use_case: { type: Type.STRING },
+				budget_idr: { type: Type.INTEGER, nullable: true },
+				market: { type: Type.STRING },
+				hard_constraints: { type: Type.ARRAY, items: { type: Type.STRING } }
+			}
+		},
+		recommendation_summary: { type: Type.STRING },
+		target_specs: {
+			type: Type.OBJECT,
+			required: ['cpu', 'gpu', 'ram', 'storage', 'screen', 'thermal', 'upgradeability'],
+			properties: {
+				cpu: { type: Type.STRING },
+				gpu: { type: Type.STRING },
+				ram: { type: Type.STRING },
+				storage: { type: Type.STRING },
+				screen: { type: Type.STRING },
+				thermal: { type: Type.STRING },
+				upgradeability: { type: Type.STRING }
+			}
+		},
+		picks: {
+			type: Type.ARRAY,
+			maxItems: '4',
 			items: {
 				type: Type.OBJECT,
-				required: ['title', 'url', 'quote_or_fact', 'relevance'],
+				required: ['label', 'name', 'expected_price_idr', 'why', 'caveat', 'evidence_refs'],
 				properties: {
-					title: { type: Type.STRING },
-					url: { type: Type.STRING },
-					quote_or_fact: { type: Type.STRING },
-					relevance: { type: Type.STRING }
+					label: {
+						type: Type.STRING,
+						enum: ['BEST_OVERALL', 'CHEAPER_SAFE', 'STRETCH_PICK', 'USED_OPTION']
+					},
+					name: { type: Type.STRING },
+					expected_price_idr: { type: Type.INTEGER, nullable: true },
+					why: { type: Type.STRING },
+					caveat: { type: Type.STRING },
+					evidence_refs: { type: Type.ARRAY, items: { type: Type.INTEGER } }
 				}
 			}
-		}
+		},
+		avoid: {
+			type: Type.ARRAY,
+			minItems: '1',
+			maxItems: '6',
+			items: {
+				type: Type.OBJECT,
+				required: ['pattern', 'reason'],
+				properties: {
+					pattern: { type: Type.STRING },
+					reason: { type: Type.STRING }
+				}
+			}
+		},
+		deal_rules: { type: Type.ARRAY, minItems: '1', maxItems: '6', items: { type: Type.STRING } },
+		evidence: { type: Type.ARRAY, maxItems: '8', items: evidenceItemSchema },
+		confidence: { type: Type.STRING, enum: ['HIGH', 'MEDIUM', 'LOW'] },
+		next_action: { type: Type.STRING }
+	}
+};
+
+const comparisonResponseSchema: Schema = {
+	type: Type.OBJECT,
+	required: ['query', 'winner', 'loser', 'verdict', 'reason', 'compared', 'evidence', 'confidence'],
+	properties: {
+		query: { type: Type.STRING },
+		winner: { type: Type.STRING },
+		loser: { type: Type.STRING },
+		verdict: { type: Type.STRING, enum: ['CLEAR_WIN', 'CLOSE_CALL', 'BOTH_BAD'] },
+		reason: { type: Type.STRING },
+		compared: {
+			type: Type.ARRAY,
+			minItems: '2',
+			maxItems: '4',
+			items: {
+				type: Type.OBJECT,
+				required: ['name', 'price_idr', 'strengths', 'flaws', 'verdict'],
+				properties: {
+					name: { type: Type.STRING },
+					price_idr: { type: Type.INTEGER, nullable: true },
+					strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+					flaws: { type: Type.ARRAY, items: { type: Type.STRING } },
+					verdict: { type: Type.STRING, enum: ['APPROVED', 'CAUTION', 'WASTE'] }
+				}
+			}
+		},
+		evidence: { type: Type.ARRAY, maxItems: '8', items: evidenceItemSchema },
+		confidence: { type: Type.STRING, enum: ['HIGH', 'MEDIUM', 'LOW'] }
 	}
 };
 
@@ -97,7 +227,81 @@ const extractJsonText = (text: string) => {
 	return stripped.slice(firstBrace, lastBrace + 1);
 };
 
-const parseGeminiVerdict = (text: string, sources: BlepSource[]): BlepVerdict => {
+const assertEvidenceFromSources = (
+	evidence: { url: string }[],
+	sources: BlepSource[]
+) => {
+	const sourceUrls = new Set(sources.map((source) => source.url));
+
+	for (const item of evidence) {
+		if (!sourceUrls.has(item.url)) {
+			throw new GeminiVerdictError('schema_failed', 'schema');
+		}
+	}
+};
+
+type ModeConfig<T extends BlepPhase1Output> = {
+	systemPrompt: string;
+	responseSchema: Schema;
+	maxOutputTokens: number;
+	buildPrompt: (query: string, sources: BlepSource[], intent: BlepIntentResult) => string;
+	parse: (raw: unknown, sources: BlepSource[]) => T;
+};
+
+const parseWith = <T extends BlepPhase1Output>(
+	zodParse: (raw: unknown) => { success: true; data: T } | { success: false },
+	getEvidence: (data: T) => { url: string }[]
+) => {
+	return (raw: unknown, sources: BlepSource[]): T => {
+		const result = zodParse(raw);
+		if (!result.success) {
+			throw new GeminiVerdictError('schema_failed', 'schema');
+		}
+
+		assertEvidenceFromSources(getEvidence(result.data), sources);
+
+		return result.data;
+	};
+};
+
+const verdictConfig: ModeConfig<BlepVerdict> = {
+	systemPrompt: BLEP_SYSTEM_PROMPT,
+	responseSchema: verdictResponseSchema,
+	maxOutputTokens: 1600,
+	buildPrompt: (query, sources) => buildBlepPrompt(query, sources),
+	parse: parseWith(
+		(raw) => blepVerdictSchema.safeParse(raw),
+		(data) => data.evidence
+	)
+};
+
+const recommendationConfig: ModeConfig<BlepRecommendation> = {
+	systemPrompt: BLEP_RECOMMENDATION_SYSTEM_PROMPT,
+	responseSchema: recommendationResponseSchema,
+	maxOutputTokens: 2400,
+	buildPrompt: buildRecommendationPrompt,
+	parse: parseWith(
+		(raw) => blepRecommendationSchema.safeParse(raw),
+		(data) => data.evidence
+	)
+};
+
+const comparisonConfig: ModeConfig<BlepComparison> = {
+	systemPrompt: BLEP_COMPARISON_SYSTEM_PROMPT,
+	responseSchema: comparisonResponseSchema,
+	maxOutputTokens: 2200,
+	buildPrompt: buildComparisonPrompt,
+	parse: parseWith(
+		(raw) => blepComparisonSchema.safeParse(raw),
+		(data) => data.evidence
+	)
+};
+
+const parseModelText = <T extends BlepPhase1Output>(
+	config: ModeConfig<T>,
+	text: string,
+	sources: BlepSource[]
+): T => {
 	let parsed: unknown;
 
 	try {
@@ -106,38 +310,30 @@ const parseGeminiVerdict = (text: string, sources: BlepSource[]): BlepVerdict =>
 		throw new GeminiVerdictError('schema_failed', 'parse');
 	}
 
-	const schemaResult = blepVerdictSchema.safeParse(parsed);
-	if (!schemaResult.success) {
-		throw new GeminiVerdictError('schema_failed', 'schema');
-	}
-
-	const verdict = schemaResult.data;
-	const sourceUrls = new Set(sources.map((source) => source.url));
-
-	for (const evidence of verdict.evidence) {
-		if (!sourceUrls.has(evidence.url)) {
-			throw new GeminiVerdictError('schema_failed', 'schema');
-		}
-	}
-
-	return verdict;
+	return config.parse(parsed, sources);
 };
 
-const generateWithModel = async (model: string, query: string, sources: BlepSource[]) => {
+const generateWithModel = async <T extends BlepPhase1Output>(
+	config: ModeConfig<T>,
+	model: string,
+	query: string,
+	sources: BlepSource[],
+	intent: BlepIntentResult
+): Promise<{ result: T; model: string }> => {
 	const ai = getClient();
 	let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
 
 	try {
 		response = await ai.models.generateContent({
 			model,
-			contents: buildBlepPrompt(query, sources),
+			contents: config.buildPrompt(query, sources, intent),
 			config: {
-				systemInstruction: BLEP_SYSTEM_PROMPT,
+				systemInstruction: config.systemPrompt,
 				responseMimeType: 'application/json',
-				responseSchema: verdictResponseSchema,
+				responseSchema: config.responseSchema,
 				temperature: 0.2,
 				candidateCount: 1,
-				maxOutputTokens: 1600
+				maxOutputTokens: config.maxOutputTokens
 			}
 		});
 	} catch {
@@ -152,10 +348,10 @@ const generateWithModel = async (model: string, query: string, sources: BlepSour
 	}
 
 	try {
-		const verdict = parseGeminiVerdict(text, sources);
+		const result = parseModelText(config, text, sources);
 		console.info(`[blep gemini] model=${model} call=ok parse=ok schema=ok`);
 
-		return { verdict, model };
+		return { result, model };
 	} catch (error) {
 		const stage = error instanceof GeminiVerdictError ? error.stage : 'schema';
 		console.info(
@@ -165,10 +361,12 @@ const generateWithModel = async (model: string, query: string, sources: BlepSour
 	}
 };
 
-export const generateVerdict = async (
+const runWithFallback = async <T extends BlepPhase1Output>(
+	config: ModeConfig<T>,
 	query: string,
-	sources: BlepSource[]
-): Promise<{ verdict: BlepVerdict; model: string }> => {
+	sources: BlepSource[],
+	intent: BlepIntentResult
+): Promise<{ result: T; model: string }> => {
 	const primaryModel = blepEnv.demoMode ? blepEnv.geminiModelDemo : blepEnv.geminiModelMain;
 	const models = [primaryModel, blepEnv.geminiModelBackup].filter(
 		(model, index, all) => all.indexOf(model) === index
@@ -177,7 +375,7 @@ export const generateVerdict = async (
 
 	for (const model of models) {
 		try {
-			return await generateWithModel(model, query, sources);
+			return await generateWithModel(config, model, query, sources, intent);
 		} catch (error) {
 			if (!(error instanceof GeminiVerdictError)) {
 				throw new GeminiVerdictError('gemini_failed', 'call');
@@ -188,6 +386,35 @@ export const generateVerdict = async (
 	}
 
 	throw lastError ?? new GeminiVerdictError('gemini_failed', 'call');
+};
+
+export const generateVerdict = async (
+	query: string,
+	sources: BlepSource[]
+): Promise<{ verdict: BlepVerdict; model: string }> => {
+	const { result, model } = await runWithFallback(
+		verdictConfig,
+		query,
+		sources,
+		{ intent: 'VERDICT_SCAN', budget_idr: null, use_case: null, category: 'laptop', devices: [] }
+	);
+
+	return { verdict: result, model };
+};
+
+export const generatePhase1 = async (
+	query: string,
+	sources: BlepSource[],
+	intent: BlepIntentResult
+): Promise<{ result: BlepPhase1Output; model: string }> => {
+	switch (intent.intent) {
+		case 'RECOMMENDATION_SCAN':
+			return runWithFallback(recommendationConfig, query, sources, intent);
+		case 'COMPARISON_SCAN':
+			return runWithFallback(comparisonConfig, query, sources, intent);
+		default:
+			return runWithFallback(verdictConfig, query, sources, intent);
+	}
 };
 
 export const getGeminiErrorCode = (error: unknown): GeminiFailureCode =>

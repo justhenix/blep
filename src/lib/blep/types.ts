@@ -1,24 +1,21 @@
+import type { z } from 'zod';
 import type { ScanInputGateReason } from './input-gate';
+import type { BlepIntent } from './intent';
+import type {
+	blepComparisonSchema,
+	blepEvidenceSchema,
+	blepNeedsInputSchema,
+	blepPhase1OutputSchema,
+	blepRecommendationSchema,
+	blepVerdictSchema
+} from './schema';
 
-export type BlepVerdict = {
-	name: string;
-	verdict: 'APPROVED' | 'CAUTION' | 'WASTE';
-	landfill_year: number;
-	fatal_flaw: string;
-	specs: {
-		upgradeable: boolean;
-		thermal: string;
-		forum_score: number;
-	};
-	roast: string;
-	summary: string;
-	evidence: {
-		title: string;
-		url: string;
-		quote_or_fact: string;
-		relevance: string;
-	}[];
-};
+export type BlepEvidence = z.infer<typeof blepEvidenceSchema>;
+export type BlepVerdict = z.infer<typeof blepVerdictSchema>;
+export type BlepRecommendation = z.infer<typeof blepRecommendationSchema>;
+export type BlepComparison = z.infer<typeof blepComparisonSchema>;
+export type BlepNeedsInput = z.infer<typeof blepNeedsInputSchema>;
+export type BlepPhase1Output = z.infer<typeof blepPhase1OutputSchema>;
 
 export type BlepScanRequest = {
 	query: string;
@@ -38,50 +35,56 @@ export type BlepQuota = {
 	};
 };
 
-export type BlepLiveScanResponse = BlepQuota & {
-	ok: true;
-	mode: 'live';
-	cached?: boolean;
-	sources: {
-		title: string;
-		url: string;
-	}[];
-	verdict: BlepVerdict;
+type SourceSummary = {
+	title: string;
+	url: string;
 };
 
-export type BlepMockScanResponse = BlepQuota & {
-	ok: true;
-	mode: 'mock';
-	cached?: false;
-	sources: [];
-	verdict: BlepVerdict;
+type ResultEnvelope = {
+	intent: BlepIntent;
+	result: BlepPhase1Output;
+	// Kept for old verdict UI compatibility; present only when result.mode === 'VERDICT'.
+	verdict?: BlepVerdict;
 };
 
-export type BlepFallbackScanResponse = BlepQuota & {
-	ok: false;
-	mode: 'fallback';
-	error: string;
-	cached?: false;
-	retry_after_seconds?: number;
-	sources: {
-		title: string;
-		url: string;
-	}[];
-	verdict: BlepVerdict;
-};
-
-export type BlepDeclinedScanResponse = BlepQuota & {
-	ok: false;
-	mode: 'declined';
-	error: 'non_tech_input';
-	cached?: false;
-	gate?: {
-		reason: ScanInputGateReason;
-		confidence: 'high' | 'medium' | 'low';
+export type BlepLiveScanResponse = BlepQuota &
+	ResultEnvelope & {
+		ok: true;
+		mode: 'live';
+		cached?: boolean;
+		sources: SourceSummary[];
 	};
-	sources: [];
-	verdict: BlepVerdict;
-};
+
+export type BlepMockScanResponse = BlepQuota &
+	ResultEnvelope & {
+		ok: true;
+		mode: 'mock';
+		cached?: false;
+		sources: [];
+	};
+
+export type BlepFallbackScanResponse = BlepQuota &
+	ResultEnvelope & {
+		ok: false;
+		mode: 'fallback';
+		error: string;
+		cached?: false;
+		retry_after_seconds?: number;
+		sources: SourceSummary[];
+	};
+
+export type BlepDeclinedScanResponse = BlepQuota &
+	ResultEnvelope & {
+		ok: false;
+		mode: 'declined';
+		error: 'non_tech_input';
+		cached?: false;
+		gate?: {
+			reason: ScanInputGateReason;
+			confidence: 'high' | 'medium' | 'low';
+		};
+		sources: [];
+	};
 
 export type BlepScanResponse =
 	| BlepLiveScanResponse
