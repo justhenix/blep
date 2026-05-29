@@ -2,6 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { spring } from 'svelte/motion';
+	import { fade } from 'svelte/transition';
 
 	type DemoPhase = 'idle' | 'running' | 'done';
 
@@ -51,6 +52,8 @@
 	let windowWidth = $state(1024);
 	let windowHeight = $state(768);
 	let isSquinting = $state(false);
+	let isIdle = $state(false);
+	let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const eyeOffset = spring({ x: 0, y: 0 }, {
 		stiffness: 0.06,
@@ -70,6 +73,28 @@
 			isSquinting = false;
 		}, 800);
 	};
+
+	const resetIdleTimer = () => {
+		isIdle = false;
+		if (idleTimer) clearTimeout(idleTimer);
+		// 1 minute idle
+		idleTimer = setTimeout(() => {
+			isIdle = true;
+		}, 60000);
+	};
+
+	$effect(() => {
+		resetIdleTimer();
+		
+		const handleActivity = () => resetIdleTimer();
+		const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
+		events.forEach(e => window.addEventListener(e, handleActivity));
+		
+		return () => {
+			if (idleTimer) clearTimeout(idleTimer);
+			events.forEach(e => window.removeEventListener(e, handleActivity));
+		};
+	});
 
 	const verdictReady = $derived(demoPhase === 'done');
 
@@ -121,9 +146,9 @@
 
 <main class="min-h-screen overflow-x-hidden bg-paper text-ink selection:bg-ink selection:text-paper">
 	<header class="sticky top-0 z-50 border-b border-ink/15 bg-paper/95 backdrop-blur" aria-label="Site header">
-		<nav class="mx-auto flex w-full max-w-300 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8" aria-label="Main">
-			<a class="focus-visible-ring shrink-0" href="#top" aria-label="BLEP home">
-				<img class="h-8 w-auto sm:h-9" src="/logo-full-main.svg" alt="BLEP" />
+		<nav class="mx-auto flex w-full max-w-300 items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8" aria-label="Main">
+			<a class="focus-visible-ring shrink-0 flex items-center" href="#top" aria-label="BLEP home">
+				<img class="h-10 w-auto sm:h-12" src="/logo-full-main.svg" alt="BLEP" />
 			</a>
 
 			<div class="hidden items-center gap-8 text-sm font-semibold text-ink/70 md:flex">
@@ -138,12 +163,9 @@
 		</nav>
 	</header>
 
-	<section id="top" class="grid min-h-[calc(100svh-4rem)] items-center overflow-hidden border-b border-ink/15 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+	<section id="top" class="flex flex-col justify-center min-h-[calc(100svh-4rem)] overflow-hidden border-b border-ink/15 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
 		<div class="mx-auto grid w-full max-w-300 min-w-0 gap-7 lg:grid-cols-[0.45fr_0.55fr] lg:items-center">
 			<div class="relative z-10 max-w-xl min-w-0">
-				<p class="mb-5 inline-flex border border-ink/25 bg-paper px-3 py-1 font-mono text-xs font-bold uppercase text-ink/65">
-					Tiny hardware judge
-				</p>
 				<h1 class="hero-headline max-w-xl text-balance font-bold leading-[0.94]">
 					Buy less junk.
 				</h1>
@@ -190,19 +212,37 @@
 							<polygon class="cube-line" points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28" />
 							<line class="cube-line" x1="33.36" y1="297.37" x2="201.17" y2="357.78" />
 							<g style="transform: translate({$eyeOffset.x}px, {$eyeOffset.y}px);">
-								{#if isSquinting}
-									<!-- Visually left eye (matches left polygon's bounding box) -->
+								<!-- Squinting eyes (crossfade) -->
+								<g class="transition-opacity duration-200 {isSquinting ? 'opacity-100' : 'opacity-0'}">
+									<!-- Visually left eye -->
 									<polyline points="716.42,445.28 656.5,496 719.45,519.14" fill="none" stroke="#111111" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter" />
-									<!-- Visually right eye (matches right polygon's bounding box) -->
+									<!-- Visually right eye -->
 									<polyline points="528.12,487.6 591,510.55 531.14,561.46" fill="none" stroke="#111111" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter" />
-								{:else}
-									<polygon class="mascot-eye" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14" />
-									<polygon class="mascot-eye" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48" />
-								{/if}
+								</g>
+								
+								<!-- Normal / Sleep eyes -->
+								<g class="transition-opacity duration-200 {isSquinting ? 'opacity-0' : 'opacity-100'}">
+									<polygon class="mascot-eye {isIdle ? 'sleepy' : ''}" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14" />
+									<polygon class="mascot-eye {isIdle ? 'sleepy' : ''}" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48" />
+								</g>
 							</g>
 						</g>
 					</svg>
 				</div>
+				{#if isIdle}
+					<div class="absolute inset-0 z-20 pointer-events-none mx-auto flex items-center justify-center" aria-hidden="true" transition:fade={{ duration: 400 }}>
+						<div class="relative w-[66%] max-w-82.5 aspect-square sm:w-[58%] lg:max-w-87.5">
+							<p class="eepy-pulse absolute left-[-15%] top-[15%] font-mono text-xs font-bold text-ink/40 sm:left-[-10%]">
+								(eepy...)
+							</p>
+							<div class="absolute right-[10%] top-[5%] h-24 w-16 font-mono font-bold text-ink/40">
+								<span class="z-float absolute bottom-0 left-0 text-xl">z</span>
+								<span class="z-float absolute bottom-4 left-4 text-2xl" style="animation-delay: 1.2s;">z</span>
+								<span class="z-float absolute bottom-9 left-8 text-3xl" style="animation-delay: 2.4s;">z</span>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 	</section>
@@ -345,7 +385,25 @@
 								<path d="M4 16h50M44 7l10 9-10 9" fill="none" stroke="currentColor" stroke-width="2" />
 							</svg>
 						</div>
-						<div class="mini-cube mb-5" aria-hidden="true"></div>
+						{#if index === 0}
+							<!-- Paste SVG (lucide-clipboard) -->
+							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-ink mb-5" aria-hidden="true">
+								<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+								<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+							</svg>
+						{:else if index === 1}
+							<!-- Check SVG (lucide-search) -->
+							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-ink mb-5" aria-hidden="true">
+								<circle cx="11" cy="11" r="8"/>
+								<path d="m21 21-4.3-4.3"/>
+							</svg>
+						{:else}
+							<!-- Decide SVG (lucide-check-circle) -->
+							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-ink mb-5" aria-hidden="true">
+								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+								<path d="m22 4-10 10.01-3-3"/>
+							</svg>
+						{/if}
 						<h3 class="text-2xl font-bold">{step.title}</h3>
 						<p class="mt-3 text-sm leading-relaxed text-ink/65">{step.text}</p>
 					</article>
@@ -381,7 +439,7 @@
 	<footer class="border-t border-ink/20 bg-paper px-4 py-10 sm:px-6 lg:px-8">
 		<div class="mx-auto flex w-full max-w-300 flex-col gap-7 sm:flex-row sm:items-end sm:justify-between">
 			<div>
-				<img class="h-10 w-auto" src="/logo-full-main.svg" alt="BLEP" />
+				<img class="h-14 w-auto" src="/logo-full-main.svg" alt="BLEP" />
 				<p class="mt-4 max-w-sm text-sm font-bold text-ink/65">
 					Fast hardware verdicts before you spend.
 				</p>
@@ -475,6 +533,12 @@
 		transform-box: fill-box;
 		transform-origin: center;
 		animation: blink 6s infinite;
+		transition: transform 300ms ease-in-out;
+	}
+
+	.mascot-eye.sleepy {
+		animation: none;
+		transform: scaleY(0.12);
 	}
 
 	.lab-card {
@@ -497,6 +561,15 @@
 
 	.log-pulse {
 		animation: pulse-text 900ms ease-in-out infinite;
+	}
+
+	.eepy-pulse {
+		animation: eepy-pulse 3s ease-in-out infinite;
+	}
+
+	.z-float {
+		opacity: 0;
+		animation: float-z 3.6s ease-in infinite;
 	}
 
 	.stamp {
@@ -546,15 +619,7 @@
 		box-shadow: 6px 6px 0 rgba(17, 17, 17, 0.1);
 	}
 
-	.mini-cube {
-		width: 2rem;
-		height: 2rem;
-		border: 2px solid #111111;
-		background:
-			linear-gradient(90deg, transparent 45%, #111111 45%, #111111 55%, transparent 55%),
-			#fbfaf8;
-		transform: skewY(-8deg);
-	}
+
 
 	@keyframes mascot-float {
 		0%,
@@ -591,6 +656,32 @@
 	@keyframes pulse-text {
 		50% {
 			opacity: 0.45;
+		}
+	}
+
+	@keyframes eepy-pulse {
+		0%, 100% {
+			opacity: 0.8;
+		}
+		50% {
+			opacity: 0.4;
+		}
+	}
+
+	@keyframes float-z {
+		0% {
+			opacity: 0;
+			transform: translate(0, 5px) scale(0.8);
+		}
+		20% {
+			opacity: 0.7;
+		}
+		80% {
+			opacity: 0.7;
+		}
+		100% {
+			opacity: 0;
+			transform: translate(15px, -20px) scale(1.2);
 		}
 	}
 

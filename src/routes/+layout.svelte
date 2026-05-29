@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import './layout.css';
+	import '../app.css';
 
 	let { children } = $props();
 	const isLandingPage = $derived(page.route.id === '/');
