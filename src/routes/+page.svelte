@@ -71,8 +71,6 @@
 	let isSquinting = $state(false);
 	let isIdle = $state(false);
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
-	let footerShowP = $state(false);
-	let footerPFlashTimer: ReturnType<typeof setTimeout> | undefined;
 	let footerInView = $state(false);
 	let footerRef = $state<HTMLElement | null>(null);
 
@@ -123,14 +121,6 @@
 		}, 800);
 	};
 
-	const handleFooterMascotClick = () => {
-		footerShowP = true;
-		if (footerPFlashTimer) clearTimeout(footerPFlashTimer);
-		footerPFlashTimer = setTimeout(() => {
-			footerShowP = false;
-		}, 520);
-	};
-
 	const resetIdleTimer = () => {
 		isIdle = false;
 		if (idleTimer) clearTimeout(idleTimer);
@@ -178,14 +168,10 @@
 				? 'Compare devices'
 				: 'Judge this listing'
 	);
-	const activeLogs = $derived(
-		scanIntent === 'RECOMMENDATION_SCAN' ? recommendationLogs : demoLogs
-	);
+	const activeLogs = $derived(scanIntent === 'RECOMMENDATION_SCAN' ? recommendationLogs : demoLogs);
 	const verdictReady = $derived(demoPhase === 'done');
 	const verdictResult = $derived(scanResult?.mode === 'VERDICT' ? scanResult : null);
-	const recommendationResult = $derived(
-		scanResult?.mode === 'RECOMMENDATION' ? scanResult : null
-	);
+	const recommendationResult = $derived(scanResult?.mode === 'RECOMMENDATION' ? scanResult : null);
 	const needsInputResult = $derived(scanResult?.mode === 'NEEDS_INPUT' ? scanResult : null);
 	const comparisonResult = $derived(scanResult?.mode === 'COMPARISON' ? scanResult : null);
 
@@ -276,7 +262,6 @@
 
 	onDestroy(() => {
 		clearDemoTimer();
-		if (footerPFlashTimer) clearTimeout(footerPFlashTimer);
 	});
 </script>
 
@@ -563,7 +548,9 @@
 							<div class="max-w-sm px-6 text-center">
 								<p class="font-mono text-xs font-bold text-ink/55 uppercase">Mock judge</p>
 								<h3 class="mt-3 text-3xl font-bold">Result waits here.</h3>
-								<p class="mt-3 text-sm leading-relaxed text-ink/65">Mock mode returns fixed data.</p>
+								<p class="mt-3 text-sm leading-relaxed text-ink/65">
+									Mock mode returns fixed data.
+								</p>
 							</div>
 						</div>
 					{:else if demoPhase === 'running'}
@@ -599,7 +586,9 @@
 							{/if}
 
 							{#if scanError}
-								<p class="mb-3 border border-ink bg-paper p-3 font-mono text-xs font-bold text-ink/70 uppercase">
+								<p
+									class="mb-3 border border-ink bg-paper p-3 font-mono text-xs font-bold text-ink/70 uppercase"
+								>
 									{scanError}
 								</p>
 							{/if}
@@ -615,7 +604,9 @@
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Need input</p>
 											<h3 class="mt-1 text-3xl font-bold">Not enough anchors.</h3>
 										</div>
-										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase">
+										<p
+											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase"
+										>
 											ASK
 										</p>
 									</div>
@@ -654,11 +645,15 @@
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Comparison</p>
 											<h3 class="mt-1 text-3xl font-bold">{comparisonResult.winner} wins.</h3>
 										</div>
-										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase">
+										<p
+											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase"
+										>
 											{comparisonResult.verdict}
 										</p>
 									</div>
-									<p class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold">
+									<p
+										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold"
+									>
 										{comparisonResult.reason}
 									</p>
 									<div class="mt-5 grid gap-3 md:grid-cols-2">
@@ -724,7 +719,8 @@
 									</blockquote>
 
 									<p class="mt-5 border-t border-ink/20 pt-5 text-base leading-relaxed text-ink/75">
-										<strong class="text-ink">Summary:</strong> {verdictResult.summary}
+										<strong class="text-ink">Summary:</strong>
+										{verdictResult.summary}
 									</p>
 								</article>
 							{:else}
@@ -864,7 +860,24 @@
 
 		<nav class="blep-footer__links" aria-label="Footer">
 			<div class="blep-footer__col blep-footer__locale">
-				<a href="#top">Top</a>
+				<a href="#top">
+					<svg
+						class="blep-footer__locale-arrow"
+						viewBox="0 0 24 24"
+						aria-hidden="true"
+						focusable="false"
+					>
+						<path
+							d="M12 19V5m0 0-5 5m5-5 5 5"
+							fill="none"
+							stroke="currentColor"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2.25"
+						/>
+					</svg>
+					<span>Top</span>
+				</a>
 			</div>
 
 			<div class="blep-footer__col">
@@ -882,12 +895,7 @@
 			</div>
 		</nav>
 
-		<button
-			class="blep-footer__logo-wrap"
-			type="button"
-			aria-label="Interact with BLEP mascot"
-			onclick={handleFooterMascotClick}
-		>
+		<button class="blep-footer__logo-wrap" type="button" aria-label="BLEP mascot">
 			<img
 				class="blep-footer__logo"
 				src="/logo-full-main.svg"
@@ -915,17 +923,16 @@
 						? $footerEyeOffset.y
 						: 0}px);"
 				>
-					<polygon
-						class="blep-footer-eye"
-						points="340.546875 253.601562 311.574219 260.203125 310.148438 225.328125 339.117188 218.726562"
-					/>
-					<polygon
-						class="blep-footer-eye"
-						points="280.59375 266.980469 251.625 273.582031 250.199219 238.710938 279.167969 232.109375"
-					/>
-					<text class="blep-footer-p {footerShowP ? 'opacity-100' : 'opacity-0'}" x="361" y="260">
-						P
-					</text>
+					<g class="blep-footer-face" aria-hidden="true">
+						<polygon
+							class="blep-footer-eye"
+							points="340.546875 253.601562 311.574219 260.203125 310.148438 225.328125 339.117188 218.726562"
+						/>
+						<polygon
+							class="blep-footer-eye"
+							points="280.59375 266.980469 251.625 273.582031 250.199219 238.710938 279.167969 232.109375"
+						/>
+					</g>
 				</g>
 			</svg>
 		</button>
@@ -980,6 +987,9 @@
 	}
 
 	.blep-footer__col a {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
 		width: fit-content;
 		color: currentColor;
 		font:
@@ -994,10 +1004,11 @@
 		text-decoration-thickness: 0.12em;
 	}
 
-	.blep-footer__locale a::before {
-		content: '◎';
-		margin-right: 1rem;
-		font-size: 0.75em;
+	.blep-footer__locale-arrow {
+		width: 0.9em;
+		height: 0.9em;
+		flex: 0 0 auto;
+		transform: translateY(-0.02em);
 	}
 
 	.blep-footer__logo-wrap {
@@ -1052,14 +1063,6 @@
 		stroke: #000000;
 		stroke-width: 7;
 		stroke-linejoin: miter;
-	}
-
-	.blep-footer-p {
-		fill: #000000;
-		font-family: var(--font-mono);
-		font-size: 54px;
-		font-weight: 700;
-		transition: opacity 140ms ease;
 	}
 
 	.sr-only {
