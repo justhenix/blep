@@ -5,7 +5,7 @@ import {
 	createDeclineVerdict,
 	type ScanInputGateResult
 } from '$lib/blep/input-gate';
-import { routeIntent, type BlepIntentResult } from '$lib/blep/intent';
+import { detectBlepIntent, type BlepIntentResult } from '$lib/blep/intent';
 import { buildFallbackVerdict, buildMockNeedsInput, buildMockOutput } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
 import type {
@@ -256,7 +256,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return respond(buildDeclinedResponse(gate));
 	}
 
-	const intent = routeIntent(query, requestUrls);
+	const intent = detectBlepIntent(query, requestUrls);
 	console.info(`[blep intent] routed intent=${intent.intent}`);
 
 	// NEEDS_INPUT exits before any quota / Firecrawl / Gemini work.

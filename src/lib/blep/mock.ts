@@ -139,39 +139,55 @@ export const buildMockRecommendation = (
 		recommendation_summary: `Mock recommendation for ${useCase} around ${budgetLabel}. Live mode adds current listing evidence.`,
 		target_specs: {
 			cpu: 'Ryzen 5 / Core i5 H-series (8 cores)',
-			gpu: 'RTX 4050 minimum for gaming',
+			gpu: 'RTX 4050 class minimum if listing evidence supports it',
 			ram: '16GB dual-channel',
 			storage: '512GB NVMe SSD',
 			screen: '15.6" 144Hz IPS',
 			thermal: 'Dual-fan with acceptable sustained clocks',
-			upgradeability: 'Free RAM slot + spare M.2'
+			upgradeability: 'Upgradeable RAM preferred, spare M.2 nice to have'
 		},
 		picks: [
 			{
 				label: 'BEST_OVERALL',
-				name: 'Target: RTX 4050 / 16GB / 144Hz class',
-				expected_price_idr: intent.budget_idr,
+				name: 'RTX 4050 gaming laptop target',
+				expected_price_idr: null,
 				why: 'Hits the playable-modern-games bracket without overpaying for badge GPUs.',
 				caveat: 'Mock pick. Exact model depends on live listing evidence.',
 				evidence_refs: [0]
 			},
 			{
 				label: 'CHEAPER_SAFE',
-				name: 'Target: RTX 3050 / 16GB if much cheaper',
+				name: 'RTX 3050 laptop only if much cheaper',
 				expected_price_idr: null,
 				why: 'Acceptable when non-GPU value (panel, build, RAM) is strong.',
 				caveat: 'Only if the price gap is real, not marketing.',
+				evidence_refs: [0]
+			},
+			{
+				label: 'STRETCH_PICK',
+				name: 'RTX 4060 deal if found near budget',
+				expected_price_idr: null,
+				why: 'Worth stretching only when price is close and cooling is not trash.',
+				caveat: 'Do not chase RTX 4060 if RAM, screen, or thermals are cut down.',
 				evidence_refs: [0]
 			}
 		],
 		avoid: [
 			{
-				pattern: 'GTX 1650 / RTX 2050 above 10-11 juta',
-				reason: 'Old GPU tier at premium price; loses to RTX 4050 class.'
+				pattern: 'RTX 2050 above 10-11 juta',
+				reason: 'Old entry GPU wearing a gaming sticker.'
 			},
 			{
-				pattern: '8GB soldered single-channel RAM',
+				pattern: 'GTX 1650 premium listings',
+				reason: 'Too old for this bracket unless brutally cheap.'
+			},
+			{
+				pattern: '8GB single-channel final config',
 				reason: 'Kills multitasking and cannot be fixed later.'
+			},
+			{
+				pattern: 'U-series CPU marketed as gaming',
+				reason: 'Thin-office chip pretending to be a gaming engine.'
 			}
 		],
 		deal_rules: [

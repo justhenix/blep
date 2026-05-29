@@ -97,6 +97,7 @@ export const blepRecommendationSchema = z
 					})
 					.strict()
 			)
+			.min(2)
 			.max(4),
 		avoid: z
 			.array(

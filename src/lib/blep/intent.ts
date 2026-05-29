@@ -14,6 +14,7 @@ const RECOMMENDATION_TRIGGERS = [
 	'recommend',
 	'cari',
 	'best',
+	'best laptop',
 	'under',
 	'di bawah',
 	'dibawah'
@@ -152,7 +153,10 @@ export function routeIntent(query: string, urls: string[] = []): BlepIntentResul
 	}
 
 	const hasRecoKeyword = hasAny(text, RECOMMENDATION_TRIGGERS);
-	const isRecommendation = hasRecoKeyword || (budget_idr !== null && use_case !== null);
+	const hasUseCaseRequest =
+		use_case !== null && hasAny(text, ['buat', 'untuk', 'for', 'dipakai buat']);
+	const isRecommendation =
+		hasRecoKeyword || hasUseCaseRequest || (budget_idr !== null && use_case !== null);
 
 	if (isRecommendation) {
 		if (budget_idr === null && use_case === null) {
@@ -164,3 +168,5 @@ export function routeIntent(query: string, urls: string[] = []): BlepIntentResul
 
 	return { ...base, intent: 'VERDICT_SCAN' };
 }
+
+export const detectBlepIntent = routeIntent;

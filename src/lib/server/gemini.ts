@@ -135,6 +135,7 @@ const recommendationResponseSchema: Schema = {
 		},
 		picks: {
 			type: Type.ARRAY,
+			minItems: '2',
 			maxItems: '4',
 			items: {
 				type: Type.OBJECT,

@@ -3,8 +3,12 @@
 	import { resolve } from '$app/paths';
 	import { spring } from 'svelte/motion';
 	import { fade } from 'svelte/transition';
+	import RecommendationCard from '$lib/components/RecommendationCard.svelte';
+	import { detectBlepIntent, type BlepIntent } from '$lib/blep/intent';
+	import type { BlepPhase1Output, BlepScanResponse } from '$lib/blep/types';
 
 	type DemoPhase = 'idle' | 'running' | 'done';
+	type ScanMode = BlepScanResponse['mode'];
 
 	const demoLogs = [
 		'[blep checking specs...]',
@@ -12,6 +16,14 @@
 		'[blep checking repairability...]',
 		'[blep comparing price to regret...]',
 		'[blep preparing verdict...]'
+	];
+
+	const recommendationLogs = [
+		'[blep reading budget...]',
+		'[blep hunting same-price alternatives...]',
+		'[blep rejecting RGB traps...]',
+		'[blep checking thermals...]',
+		'[blep building shortlist...]'
 	];
 
 	const steps = [
@@ -47,13 +59,22 @@
 	let listing = $state('Used ThinkPad T480, i5, 8GB RAM, 256GB SSD, $180');
 	let demoPhase = $state<DemoPhase>('idle');
 	let visibleLogs = $state<string[]>([]);
+	let scanResult = $state<BlepPhase1Output | null>(null);
+	let scanIntent = $state<BlepIntent | null>(null);
+	let scanMode = $state<ScanMode | null>(null);
+	let scanError = $state<string | null>(null);
 	let logTimer: ReturnType<typeof setTimeout> | undefined;
+	let activeQuery = '';
 
 	let windowWidth = $state(1024);
 	let windowHeight = $state(768);
 	let isSquinting = $state(false);
 	let isIdle = $state(false);
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
+	let footerShowP = $state(false);
+	let footerPFlashTimer: ReturnType<typeof setTimeout> | undefined;
+	let footerInView = $state(false);
+	let footerRef = $state<HTMLElement | null>(null);
 
 	const eyeOffset = spring(
 		{ x: 0, y: 0 },
@@ -62,12 +83,37 @@
 			damping: 0.7
 		}
 	);
+	const footerEyeOffset = spring(
+		{ x: 0, y: 0 },
+		{
+			stiffness: 0.08,
+			damping: 0.75
+		}
+	);
+
+	const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 	const handleMouseMove = (e: MouseEvent) => {
 		// x is inverted because the parent <g> has scale(-1, 1)
 		const rx = (e.clientX / windowWidth - 0.5) * -70;
 		const ry = (e.clientY / windowHeight - 0.5) * 70;
 		eyeOffset.set({ x: rx, y: ry });
+
+		if (!footerInView || !footerRef) {
+			footerEyeOffset.set({ x: 0, y: 0 });
+			return;
+		}
+
+		const rect = footerRef.getBoundingClientRect();
+		const pivotX = rect.left + rect.width * 0.205;
+		const pivotY = rect.top + rect.height * 0.555;
+		const fx = ((e.clientX - pivotX) / rect.width) * 42;
+		const fy = ((e.clientY - pivotY) / rect.height) * 34;
+
+		footerEyeOffset.set({
+			x: clamp(fx, -14, 14),
+			y: clamp(fy, -12, 12)
+		});
 	};
 
 	const handleMascotClick = () => {
@@ -75,6 +121,14 @@
 		setTimeout(() => {
 			isSquinting = false;
 		}, 800);
+	};
+
+	const handleFooterMascotClick = () => {
+		footerShowP = true;
+		if (footerPFlashTimer) clearTimeout(footerPFlashTimer);
+		footerPFlashTimer = setTimeout(() => {
+			footerShowP = false;
+		}, 520);
 	};
 
 	const resetIdleTimer = () => {
@@ -99,7 +153,41 @@
 		};
 	});
 
+	$effect(() => {
+		if (!footerRef || typeof IntersectionObserver === 'undefined') return;
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				const [entry] = entries;
+				footerInView = entry?.isIntersecting ?? false;
+				if (!footerInView) footerEyeOffset.set({ x: 0, y: 0 });
+			},
+			{ threshold: 0.15 }
+		);
+
+		observer.observe(footerRef);
+
+		return () => observer.disconnect();
+	});
+
+	const plannedIntent = $derived(detectBlepIntent(listing).intent);
+	const submitLabel = $derived(
+		plannedIntent === 'RECOMMENDATION_SCAN'
+			? 'Build shortlist'
+			: plannedIntent === 'COMPARISON_SCAN'
+				? 'Compare devices'
+				: 'Judge this listing'
+	);
+	const activeLogs = $derived(
+		scanIntent === 'RECOMMENDATION_SCAN' ? recommendationLogs : demoLogs
+	);
 	const verdictReady = $derived(demoPhase === 'done');
+	const verdictResult = $derived(scanResult?.mode === 'VERDICT' ? scanResult : null);
+	const recommendationResult = $derived(
+		scanResult?.mode === 'RECOMMENDATION' ? scanResult : null
+	);
+	const needsInputResult = $derived(scanResult?.mode === 'NEEDS_INPUT' ? scanResult : null);
+	const comparisonResult = $derived(scanResult?.mode === 'COMPARISON' ? scanResult : null);
 
 	const clearDemoTimer = () => {
 		if (!logTimer) return;
@@ -107,12 +195,46 @@
 		logTimer = undefined;
 	};
 
+	const finishScan = async () => {
+		try {
+			const response = await fetch(resolve('/api/scan'), {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ query: activeQuery })
+			});
+			const data = (await response.json()) as Partial<BlepScanResponse> & { error?: string };
+
+			if (!data.result || !data.intent || !data.mode) {
+				throw new Error(data.error ?? 'scan_failed');
+			}
+
+			scanMode = data.mode;
+			scanIntent = data.intent;
+			scanResult = data.result;
+			scanError = data.ok ? null : (data.error ?? 'Scan returned fallback result.');
+		} catch (error) {
+			scanResult = null;
+			scanError =
+				error instanceof Error
+					? `BLEP scan failed: ${error.message}`
+					: 'BLEP scan failed. Check mock mode or auth.';
+		} finally {
+			demoPhase = 'done';
+		}
+	};
+
 	const showLog = (index: number, delay: number) => {
 		logTimer = setTimeout(() => {
-			visibleLogs = [...visibleLogs, demoLogs[index]];
+			const log = activeLogs[index];
+			if (!log) {
+				void finishScan();
+				return;
+			}
 
-			if (index === demoLogs.length - 1) {
-				demoPhase = 'done';
+			visibleLogs = [...visibleLogs, log];
+
+			if (index === activeLogs.length - 1) {
+				void finishScan();
 				return;
 			}
 
@@ -120,10 +242,28 @@
 		}, delay);
 	};
 
+	const applyDemoQuery = (query: string) => {
+		if (demoPhase === 'running') return;
+
+		clearDemoTimer();
+		listing = query;
+		scanIntent = detectBlepIntent(query).intent;
+		scanResult = null;
+		scanMode = null;
+		scanError = null;
+		visibleLogs = [];
+		demoPhase = 'idle';
+	};
+
 	const runDemo = () => {
 		if (demoPhase === 'running' || !listing.trim()) return;
 
 		clearDemoTimer();
+		activeQuery = listing.trim();
+		scanIntent = detectBlepIntent(activeQuery).intent;
+		scanResult = null;
+		scanMode = null;
+		scanError = null;
 		visibleLogs = [];
 		demoPhase = 'running';
 
@@ -134,7 +274,10 @@
 		showLog(0, prefersReducedMotion ? 40 : 430);
 	};
 
-	onDestroy(clearDemoTimer);
+	onDestroy(() => {
+		clearDemoTimer();
+		if (footerPFlashTimer) clearTimeout(footerPFlashTimer);
+	});
 </script>
 
 <svelte:head>
@@ -151,9 +294,7 @@
 	onmousemove={handleMouseMove}
 />
 
-<main
-	class="min-h-screen overflow-x-hidden bg-paper text-ink selection:bg-ink selection:text-paper"
->
+<main class="min-h-screen bg-paper text-ink selection:bg-ink selection:text-paper">
 	<header
 		class="sticky top-0 z-50 border-b border-ink/15 bg-paper/95 backdrop-blur"
 		aria-label="Site header"
@@ -356,7 +497,7 @@
 					<h2 class="mt-2 text-4xl font-bold sm:text-5xl">Try the judge</h2>
 				</div>
 				<p class="max-w-md text-base leading-relaxed text-ink/65">
-					Paste a listing. Get a verdict.
+					Paste a listing or broad buyer ask.
 				</p>
 			</div>
 
@@ -378,11 +519,22 @@
 						</span>
 					</div>
 
+					<div class="flex flex-wrap gap-2">
+						<button
+							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-mono text-xs font-bold text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+							type="button"
+							onclick={() => applyDemoQuery('rekomendasi laptop gaming 15 juta')}
+							disabled={demoPhase === 'running'}
+						>
+							rekomendasi laptop gaming 15 juta
+						</button>
+					</div>
+
 					<textarea
 						id="listing"
 						class="focus-visible-ring min-h-40 w-full resize-none border border-ink bg-white p-4 text-base leading-relaxed outline-none"
 						bind:value={listing}
-						placeholder="Paste listing, device name, or spec sheet."
+						placeholder="Paste listing, device name, broad recommendation ask, or comparison."
 					></textarea>
 
 					<button
@@ -391,7 +543,7 @@
 						onclick={runDemo}
 						disabled={demoPhase === 'running' || !listing.trim()}
 					>
-						{demoPhase === 'running' ? 'Judging...' : 'Judge this listing'}
+						{demoPhase === 'running' ? 'Thinking...' : submitLabel}
 					</button>
 
 					<div
@@ -410,8 +562,8 @@
 						>
 							<div class="max-w-sm px-6 text-center">
 								<p class="font-mono text-xs font-bold text-ink/55 uppercase">Mock judge</p>
-								<h3 class="mt-3 text-3xl font-bold">Verdict waits here.</h3>
-								<p class="mt-3 text-sm leading-relaxed text-ink/65">Fixed data. No backend call.</p>
+								<h3 class="mt-3 text-3xl font-bold">Result waits here.</h3>
+								<p class="mt-3 text-sm leading-relaxed text-ink/65">Mock mode returns fixed data.</p>
 							</div>
 						</div>
 					{:else if demoPhase === 'running'}
@@ -431,60 +583,162 @@
 							</div>
 						</div>
 					{:else if verdictReady}
-						<article
-							class="verdict-card border border-ink bg-paper p-5 sm:p-6"
-							aria-label="Demo verdict"
-						>
-							<div
-								class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
-							>
-								<div>
-									<p class="font-mono text-xs font-bold text-ink/60 uppercase">Product</p>
-									<h3 class="mt-1 text-3xl font-bold">ThinkPad T480</h3>
+						{#if scanError && !scanResult}
+							<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
+								<div class="max-w-md text-center">
+									<p class="font-mono text-xs font-bold text-ink/55 uppercase">Scan failed</p>
+									<h3 class="mt-3 text-3xl font-bold">BLEP tripped.</h3>
+									<p class="mt-3 text-sm leading-relaxed text-ink/65">{scanError}</p>
 								</div>
-								<p class="stamp -rotate-3 border border-ink px-5 py-2 font-bold uppercase">
-									APPROVED
+							</div>
+						{:else}
+							{#if scanMode && scanIntent}
+								<p class="mb-3 font-mono text-xs font-bold text-ink/55 uppercase">
+									{scanMode} / {scanIntent}
 								</p>
-							</div>
+							{/if}
 
-							<div class="mt-5 grid gap-3 sm:grid-cols-3">
-								<div class="spec-chip">
-									<span>Landfill year</span>
-									<strong>2031</strong>
+							{#if scanError}
+								<p class="mb-3 border border-ink bg-paper p-3 font-mono text-xs font-bold text-ink/70 uppercase">
+									{scanError}
+								</p>
+							{/if}
+
+							{#if recommendationResult}
+								<RecommendationCard recommendation={recommendationResult} />
+							{:else if needsInputResult}
+								<article class="border border-ink bg-paper p-5 sm:p-6" aria-label="BLEP questions">
+									<div
+										class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
+									>
+										<div>
+											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Need input</p>
+											<h3 class="mt-1 text-3xl font-bold">Not enough anchors.</h3>
+										</div>
+										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase">
+											ASK
+										</p>
+									</div>
+									<p class="mt-5 text-base leading-relaxed font-bold text-ink/80">
+										{needsInputResult.reason}
+									</p>
+									<div class="mt-5 grid gap-3 sm:grid-cols-2">
+										{#each needsInputResult.questions as question (question)}
+											<div class="detail-block">
+												<h4>Question</h4>
+												<p>{question}</p>
+											</div>
+										{/each}
+									</div>
+									<div class="mt-5 border-t border-ink/20 pt-5">
+										<p class="font-mono text-xs font-bold text-ink/55 uppercase">Examples</p>
+										<div class="mt-3 flex flex-wrap gap-2">
+											{#each needsInputResult.examples as example (example)}
+												<button
+													class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-mono text-xs font-bold text-ink/75 uppercase transition hover:border-ink"
+													type="button"
+													onclick={() => applyDemoQuery(example)}
+												>
+													{example}
+												</button>
+											{/each}
+										</div>
+									</div>
+								</article>
+							{:else if comparisonResult}
+								<article class="border border-ink bg-paper p-5 sm:p-6" aria-label="BLEP comparison">
+									<div
+										class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
+									>
+										<div>
+											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Comparison</p>
+											<h3 class="mt-1 text-3xl font-bold">{comparisonResult.winner} wins.</h3>
+										</div>
+										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase">
+											{comparisonResult.verdict}
+										</p>
+									</div>
+									<p class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold">
+										{comparisonResult.reason}
+									</p>
+									<div class="mt-5 grid gap-3 md:grid-cols-2">
+										{#each comparisonResult.compared as option (option.name)}
+											<section class="detail-block">
+												<h4>{option.verdict}</h4>
+												<p>{option.name}</p>
+												<p class="mt-2 text-sm text-ink/65">
+													Strengths: {option.strengths.join(', ')}
+												</p>
+												<p class="mt-1 text-sm text-ink/65">Flaws: {option.flaws.join(', ')}</p>
+											</section>
+										{/each}
+									</div>
+								</article>
+							{:else if verdictResult}
+								<article
+									class="verdict-card border border-ink bg-paper p-5 sm:p-6"
+									aria-label="Demo verdict"
+								>
+									<div
+										class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
+									>
+										<div>
+											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Product</p>
+											<h3 class="mt-1 text-3xl font-bold">{verdictResult.name}</h3>
+										</div>
+										<p class="stamp -rotate-3 border border-ink px-5 py-2 font-bold uppercase">
+											{verdictResult.verdict}
+										</p>
+									</div>
+
+									<div class="mt-5 grid gap-3 sm:grid-cols-3">
+										<div class="spec-chip">
+											<span>Landfill year</span>
+											<strong>{verdictResult.landfill_year}</strong>
+										</div>
+										<div class="spec-chip">
+											<span>Upgradeable</span>
+											<strong>{verdictResult.specs.upgradeable ? 'Yes' : 'No'}</strong>
+										</div>
+										<div class="spec-chip">
+											<span>Forum score</span>
+											<strong>{verdictResult.specs.forum_score}/10</strong>
+										</div>
+									</div>
+
+									<div class="mt-5 grid gap-3 md:grid-cols-2">
+										<section class="detail-block">
+											<h4>Fatal flaw</h4>
+											<p>{verdictResult.fatal_flaw}</p>
+										</section>
+										<section class="detail-block">
+											<h4>Thermal</h4>
+											<p>{verdictResult.specs.thermal}</p>
+										</section>
+									</div>
+
+									<blockquote
+										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold"
+									>
+										{verdictResult.roast}
+									</blockquote>
+
+									<p class="mt-5 border-t border-ink/20 pt-5 text-base leading-relaxed text-ink/75">
+										<strong class="text-ink">Summary:</strong> {verdictResult.summary}
+									</p>
+								</article>
+							{:else}
+								<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
+									<div class="max-w-md text-center">
+										<p class="font-mono text-xs font-bold text-ink/55 uppercase">No result</p>
+										<h3 class="mt-3 text-3xl font-bold">Nothing rendered.</h3>
+										<p class="mt-3 text-sm leading-relaxed text-ink/65">
+											Try mock mode or send a clearer hardware ask.
+										</p>
+									</div>
 								</div>
-								<div class="spec-chip">
-									<span>Upgradeable</span>
-									<strong>Yes</strong>
-								</div>
-								<div class="spec-chip">
-									<span>Forum score</span>
-									<strong>8/10</strong>
-								</div>
-							</div>
-
-							<div class="mt-5 grid gap-3 md:grid-cols-2">
-								<section class="detail-block">
-									<h4>Fatal flaw</h4>
-									<p>Battery health is the gamble. Check cycle count before paying.</p>
-								</section>
-								<section class="detail-block">
-									<h4>Thermal</h4>
-									<p>Manageable if cleaned.</p>
-								</section>
-							</div>
-
-							<blockquote
-								class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold"
-							>
-								Old, square, and somehow still less embarrassing than a shiny sealed laptop with
-								soldered regret.
-							</blockquote>
-
-							<p class="mt-5 border-t border-ink/20 pt-5 text-base leading-relaxed text-ink/75">
-								<strong class="text-ink">Summary:</strong> Repairable, affordable, and still useful at
-								the right price.
-							</p>
-						</article>
+							{/if}
+						{/if}
 					{/if}
 				</div>
 			</div>
@@ -605,23 +859,76 @@
 		</div>
 	</section>
 
-	<footer class="border-t border-ink/20 bg-paper px-4 py-10 sm:px-6 lg:px-8">
-		<div
-			class="mx-auto flex w-full max-w-300 flex-col gap-7 sm:flex-row sm:items-end sm:justify-between"
-		>
-			<div>
-				<img class="h-12 w-auto" src="/logo-full-main.svg" alt="BLEP" />
-				<p class="mt-4 max-w-sm text-sm font-bold text-ink/65">
-					Fast hardware verdicts before you spend.
-				</p>
-				<p class="mt-2 font-mono text-xs font-bold text-ink uppercase">BLEP checks. You decide.</p>
+	<footer class="blep-footer" aria-labelledby="footer-title" bind:this={footerRef}>
+		<h2 id="footer-title" class="sr-only">Footer</h2>
+
+		<nav class="blep-footer__links" aria-label="Footer">
+			<div class="blep-footer__col blep-footer__locale">
+				<a href="#top">Top</a>
 			</div>
-			<nav class="flex flex-wrap gap-5 text-sm font-bold text-ink/65" aria-label="Footer">
-				<a class="nav-link" href="#top">Top</a>
-				<a class="nav-link" href={resolve('/privacy')}>Privacy</a>
-				<a class="nav-link" href={resolve('/terms')}>Terms</a>
-			</nav>
-		</div>
+
+			<div class="blep-footer__col">
+				<a href="#how">How it works</a>
+				<a href="#demo">Demo</a>
+				<a href="#why">Why BLEP</a>
+				<a href="mailto:hello@blep.local">Contact</a>
+			</div>
+
+			<div class="blep-footer__col">
+				<a href={resolve('/privacy')}>Privacy Policy</a>
+				<a href={resolve('/terms')}>Terms</a>
+				<a href="#demo">Judge listing</a>
+				<a href="#verdict">Demo verdict</a>
+			</div>
+		</nav>
+
+		<button
+			class="blep-footer__logo-wrap"
+			type="button"
+			aria-label="Interact with BLEP mascot"
+			onclick={handleFooterMascotClick}
+		>
+			<img
+				class="blep-footer__logo"
+				src="/logo-full-main.svg"
+				alt=""
+				loading="lazy"
+				decoding="async"
+			/>
+			<svg
+				class="blep-footer__logo-eyes"
+				viewBox="0 0 1440 442.5"
+				role="presentation"
+				focusable="false"
+			>
+				<g class="blep-footer-eye-mask">
+					<polygon
+						points="340.546875 253.601562 311.574219 260.203125 310.148438 225.328125 339.117188 218.726562"
+					/>
+					<polygon
+						points="280.59375 266.980469 251.625 273.582031 250.199219 238.710938 279.167969 232.109375"
+					/>
+				</g>
+				<g
+					class="blep-footer-eye-track"
+					style="transform: translate({footerInView ? $footerEyeOffset.x : 0}px, {footerInView
+						? $footerEyeOffset.y
+						: 0}px);"
+				>
+					<polygon
+						class="blep-footer-eye"
+						points="340.546875 253.601562 311.574219 260.203125 310.148438 225.328125 339.117188 218.726562"
+					/>
+					<polygon
+						class="blep-footer-eye"
+						points="280.59375 266.980469 251.625 273.582031 250.199219 238.710938 279.167969 232.109375"
+					/>
+					<text class="blep-footer-p {footerShowP ? 'opacity-100' : 'opacity-0'}" x="361" y="260">
+						P
+					</text>
+				</g>
+			</svg>
+		</button>
 	</footer>
 </main>
 
@@ -636,6 +943,132 @@
 	.nav-link:hover {
 		color: var(--color-ink);
 		text-decoration-color: currentColor;
+	}
+
+	.blep-footer {
+		--footer-bg: var(--color-paper);
+		--footer-ink: var(--color-ink);
+		--footer-max: 75rem;
+		--footer-pad-x: clamp(1.25rem, 5vw, 6rem);
+		--footer-pad-top: clamp(4.5rem, 12vh, 10rem);
+		--footer-link-size: clamp(1.2rem, 1.45vw, 1.75rem);
+		--footer-logo-pad: clamp(0.75rem, 1.8vw, 2rem);
+		position: relative;
+		overflow: hidden;
+		min-height: 100svh;
+		border-top: 1px solid rgba(17, 17, 17, 0.2);
+		background: var(--footer-bg);
+		color: var(--footer-ink);
+		isolation: isolate;
+	}
+
+	.blep-footer__links {
+		position: relative;
+		z-index: 2;
+		display: grid;
+		grid-template-columns: minmax(7.5rem, 1fr) minmax(12rem, 1fr) minmax(13rem, 1fr);
+		align-items: start;
+		gap: clamp(3rem, 12vw, 13.75rem);
+		max-width: var(--footer-max);
+		padding: var(--footer-pad-top) var(--footer-pad-x) 0;
+	}
+
+	.blep-footer__col {
+		display: grid;
+		align-content: start;
+		gap: 0.65rem;
+	}
+
+	.blep-footer__col a {
+		width: fit-content;
+		color: currentColor;
+		font:
+			400 var(--footer-link-size) / 1.12 Arial,
+			sans-serif;
+		text-decoration: underline;
+		text-decoration-thickness: 0.075em;
+		text-underline-offset: 0.16em;
+	}
+
+	.blep-footer__col a:hover {
+		text-decoration-thickness: 0.12em;
+	}
+
+	.blep-footer__locale a::before {
+		content: '◎';
+		margin-right: 1rem;
+		font-size: 0.75em;
+	}
+
+	.blep-footer__logo-wrap {
+		position: absolute;
+		left: 50%;
+		bottom: var(--footer-logo-pad);
+		z-index: 1;
+		width: calc(100vw - (var(--footer-logo-pad) * 2));
+		border: 0;
+		background: transparent;
+		padding: 0;
+		transform: translateX(-50%);
+		cursor: pointer;
+		pointer-events: auto;
+	}
+
+	.blep-footer__logo {
+		display: block;
+		width: 100%;
+		height: auto;
+		margin: 0;
+		padding: 0;
+	}
+
+	.blep-footer__logo-eyes {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+	.blep-footer-eye-track,
+	.blep-footer-eye,
+	.blep-footer-eye-mask {
+		transform-box: fill-box;
+		transform-origin: center;
+	}
+
+	.blep-footer-eye-track {
+		transition: transform 180ms ease-out;
+	}
+
+	.blep-footer-eye-mask polygon {
+		fill: var(--color-paper);
+		stroke: var(--color-paper);
+		stroke-width: 26;
+		stroke-linejoin: miter;
+	}
+
+	.blep-footer-eye {
+		fill: #000000;
+		stroke: #000000;
+		stroke-width: 7;
+		stroke-linejoin: miter;
+	}
+
+	.blep-footer-p {
+		fill: #000000;
+		font-family: var(--font-mono);
+		font-size: 54px;
+		font-weight: 700;
+		transition: opacity 140ms ease;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
 	.hero-headline {
@@ -880,6 +1313,19 @@
 	}
 
 	@media (max-width: 640px) {
+		.blep-footer {
+			min-height: 82svh;
+		}
+
+		.blep-footer__links {
+			grid-template-columns: 1fr 1fr;
+			gap: 2rem;
+		}
+
+		.blep-footer__locale {
+			grid-column: 1 / -1;
+		}
+
 		#top {
 			align-items: start;
 			min-height: auto;

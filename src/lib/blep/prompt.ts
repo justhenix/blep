@@ -89,7 +89,7 @@ Required shape:
 }
 
 ${SHARED_RULES}
-- picks: 0-4 items. If exact model evidence is thin, return target_specs and FEWER/NO exact picks instead of fake model certainty, and set confidence "LOW".
+- picks: 2-4 items. If exact model evidence is thin, use target-class picks instead of fake model certainty, and set confidence "LOW".
 - expected_price_idr: null when no reliable live price.
 - budget_idr: null when unknown.
 - evidence_refs index into the evidence array.
