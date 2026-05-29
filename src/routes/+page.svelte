@@ -211,7 +211,10 @@
 						<g transform="scale(-1, 1) translate(-862.31, 0)">
 							<polygon class="cube-line" points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28" />
 							<line class="cube-line" x1="33.36" y1="297.37" x2="201.17" y2="357.78" />
-							<g style="transform: translate({$eyeOffset.x}px, {$eyeOffset.y}px);">
+							<g
+								class="blep-eye-track"
+								style="transform: translate({isIdle ? 0 : $eyeOffset.x}px, {isIdle ? 0 : $eyeOffset.y}px);"
+							>
 								<!-- Squinting eyes (crossfade) -->
 								<g class="transition-opacity duration-200 {isSquinting ? 'opacity-100' : 'opacity-0'}">
 									<!-- Visually left eye -->
@@ -222,8 +225,14 @@
 								
 								<!-- Normal / Sleep eyes -->
 								<g class="transition-opacity duration-200 {isSquinting ? 'opacity-0' : 'opacity-100'}">
-									<polygon class="mascot-eye {isIdle ? 'sleepy' : ''}" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14" />
-									<polygon class="mascot-eye {isIdle ? 'sleepy' : ''}" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48" />
+									<g class="blep-eyes blep-eyes--awake {isIdle ? 'is-hidden' : ''}">
+										<polygon class="blep-eye mascot-eye" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14" />
+										<polygon class="blep-eye mascot-eye" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48" />
+									</g>
+									<g class="blep-eyes blep-eyes--sleep {isIdle ? '' : 'is-hidden'}">
+										<line class="blep-eye blep-eye--lid" x1="713" y1="486" x2="661" y2="498" />
+										<line class="blep-eye blep-eye--lid" x1="586" y1="514" x2="534" y2="526" />
+									</g>
 								</g>
 							</g>
 						</g>
@@ -524,21 +533,47 @@
 		stroke-width: 30;
 	}
 
+	.blep-eye-track,
+	.blep-eyes,
+	.blep-eye {
+		transform-box: fill-box;
+		transform-origin: center;
+	}
+
+	.blep-eye-track {
+		transition: transform 180ms ease-out;
+	}
+
+	.blep-eyes {
+		opacity: 1;
+		transition: opacity 200ms ease;
+	}
+
+	.blep-eyes.is-hidden {
+		opacity: 0;
+		pointer-events: none;
+	}
+
 	.mascot-eye {
 		fill: #111111;
 		stroke: #111111;
 		stroke-linejoin: miter;
 		stroke-miterlimit: 10;
 		stroke-width: 8;
-		transform-box: fill-box;
-		transform-origin: center;
 		animation: blink 6s infinite;
-		transition: transform 300ms ease-in-out;
+		transition: transform 200ms ease;
 	}
 
-	.mascot-eye.sleepy {
-		animation: none;
-		transform: scaleY(0.12);
+	.blep-eyes--sleep {
+		transition-duration: 220ms;
+	}
+
+	.blep-eye--lid {
+		fill: none;
+		stroke: #111111;
+		stroke-width: 18;
+		stroke-linecap: butt;
+		stroke-linejoin: miter;
 	}
 
 	.lab-card {
@@ -727,6 +762,13 @@
 			animation-duration: 0.001ms !important;
 			animation-iteration-count: 1 !important;
 			transition-duration: 0.001ms !important;
+		}
+
+		.mascot-cube,
+		.mascot-eye,
+		.eepy-pulse,
+		.z-float {
+			animation: none !important;
 		}
 	}
 </style>
