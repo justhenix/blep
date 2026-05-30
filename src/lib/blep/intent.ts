@@ -22,6 +22,7 @@ const RECOMMENDATION_TRIGGERS = [
 
 const USE_CASE_TERMS: Record<string, string> = {
 	gaming: 'gaming',
+	gmaing: 'gaming',
 	game: 'gaming',
 	coding: 'coding',
 	ngoding: 'coding',
@@ -39,6 +40,7 @@ const USE_CASE_TERMS: Record<string, string> = {
 	office: 'office',
 	kantor: 'office',
 	kuliah: 'school',
+	college: 'school',
 	sekolah: 'school',
 	school: 'school',
 	student: 'school',

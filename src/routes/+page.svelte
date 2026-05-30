@@ -1,32 +1,8 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { resolve } from '$app/paths';
 	import { spring } from 'svelte/motion';
 	import { fade } from 'svelte/transition';
-	import RecommendationCard from '$lib/components/RecommendationCard.svelte';
-	import { detectBlepIntent, type BlepIntent } from '$lib/blep/intent';
-	import type { BlepPhase1Output, BlepScanResponse } from '$lib/blep/types';
-
-	type DemoPhase = 'idle' | 'running' | 'done';
-	type ScanMode = BlepScanResponse['mode'];
-
-	const demoLogs = [
-		'[blep checking specs...]',
-		'[blep sniffing seller cope...]',
-		'[blep scanning forum thoughts...]',
-		'[blep comparing price bracket...]',
-		'[blep preparing verdict...]'
-	];
-
-	const recommendationLogs = [
-		'[blep reading budget...]',
-		'[blep hunting same-price alternatives...]',
-		'[blep scanning forum thoughts...]',
-		'[blep rejecting rgb traps...]',
-		'[blep checking thermals...]',
-		'[blep building shortlist...]'
-	];
 
 	const timelineData = [
 		{
@@ -62,23 +38,11 @@
 		}
 	];
 
-	let listing = $state('');
-	let demoPhase = $state<DemoPhase>('idle');
-	let visibleLogs = $state<string[]>([]);
-	let scanResult = $state<BlepPhase1Output | null>(null);
-	let scanIntent = $state<BlepIntent | null>(null);
-	let scanMode = $state<ScanMode | null>(null);
-	let scanError = $state<string | null>(null);
-	let logTimer: ReturnType<typeof setTimeout> | undefined;
-	let activeQuery = '';
-
 	let windowWidth = $state(1024);
 	let windowHeight = $state(768);
 	let isSquinting = $state(false);
 	let isIdle = $state(false);
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
-	let footerInView = $state(false);
-	let footerRef = $state<HTMLElement | null>(null);
 	let activeStep = $state(0);
 	let stepEls: HTMLElement[] = [];
 	let spineEl = $state<HTMLElement | null>(null);
@@ -91,37 +55,12 @@
 			damping: 0.7
 		}
 	);
-	const footerEyeOffset = spring(
-		{ x: 0, y: 0 },
-		{
-			stiffness: 0.08,
-			damping: 0.75
-		}
-	);
-
-	const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 	const handleMouseMove = (e: MouseEvent) => {
 		// x is inverted because the parent <g> has scale(-1, 1)
 		const rx = (e.clientX / windowWidth - 0.5) * -70;
 		const ry = (e.clientY / windowHeight - 0.5) * 70;
 		eyeOffset.set({ x: rx, y: ry });
-
-		if (!footerInView || !footerRef) {
-			footerEyeOffset.set({ x: 0, y: 0 });
-			return;
-		}
-
-		const rect = footerRef.getBoundingClientRect();
-		const pivotX = rect.left + rect.width * 0.205;
-		const pivotY = rect.top + rect.height * 0.555;
-		const fx = ((e.clientX - pivotX) / rect.width) * 42;
-		const fy = ((e.clientY - pivotY) / rect.height) * 34;
-
-		footerEyeOffset.set({
-			x: clamp(fx, -14, 14),
-			y: clamp(fy, -12, 12)
-		});
 	};
 
 	const handleMascotClick = () => {
@@ -151,23 +90,6 @@
 			if (idleTimer) clearTimeout(idleTimer);
 			events.forEach((e) => window.removeEventListener(e, handleActivity));
 		};
-	});
-
-	$effect(() => {
-		if (!footerRef || typeof IntersectionObserver === 'undefined') return;
-
-		const observer = new IntersectionObserver(
-			(entries) => {
-				const [entry] = entries;
-				footerInView = entry?.isIntersecting ?? false;
-				if (!footerInView) footerEyeOffset.set({ x: 0, y: 0 });
-			},
-			{ threshold: 0.15 }
-		);
-
-		observer.observe(footerRef);
-
-		return () => observer.disconnect();
 	});
 
 	// Timeline scroll observer — track which step is closest to viewport center
@@ -256,102 +178,6 @@
 			clearTimeout(initialTimeout);
 		};
 	});
-
-	const activeLogs = $derived(scanIntent === 'RECOMMENDATION_SCAN' ? recommendationLogs : demoLogs);
-	const verdictReady = $derived(demoPhase === 'done');
-	const verdictResult = $derived(scanResult?.mode === 'VERDICT' ? scanResult : null);
-	const recommendationResult = $derived(scanResult?.mode === 'RECOMMENDATION' ? scanResult : null);
-	const needsInputResult = $derived(scanResult?.mode === 'NEEDS_INPUT' ? scanResult : null);
-	const comparisonResult = $derived(scanResult?.mode === 'COMPARISON' ? scanResult : null);
-
-	const clearDemoTimer = () => {
-		if (!logTimer) return;
-		clearTimeout(logTimer);
-		logTimer = undefined;
-	};
-
-	const finishScan = async () => {
-		try {
-			const response = await fetch(resolve('/api/scan'), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ query: activeQuery })
-			});
-			const data = (await response.json()) as Partial<BlepScanResponse> & { error?: string };
-
-			if (!data.result || !data.intent || !data.mode) {
-				throw new Error(data.error ?? 'scan_failed');
-			}
-
-			scanMode = data.mode;
-			scanIntent = data.intent;
-			scanResult = data.result;
-			scanError = data.ok ? null : (data.error ?? 'Scan returned fallback result.');
-		} catch (error) {
-			scanResult = null;
-			scanError =
-				error instanceof Error
-					? `BLEP scan failed: ${error.message}`
-					: 'BLEP scan failed. Check mock mode or auth.';
-		} finally {
-			demoPhase = 'done';
-		}
-	};
-
-	const showLog = (index: number, delay: number) => {
-		logTimer = setTimeout(() => {
-			const log = activeLogs[index];
-			if (!log) {
-				void finishScan();
-				return;
-			}
-
-			visibleLogs = [...visibleLogs, log];
-
-			if (index === activeLogs.length - 1) {
-				void finishScan();
-				return;
-			}
-
-			showLog(index + 1, delay);
-		}, delay);
-	};
-
-	const applyDemoQuery = (query: string) => {
-		if (demoPhase === 'running') return;
-
-		clearDemoTimer();
-		listing = query;
-		scanIntent = detectBlepIntent(query).intent;
-		scanResult = null;
-		scanMode = null;
-		scanError = null;
-		visibleLogs = [];
-		demoPhase = 'idle';
-	};
-
-	const runDemo = () => {
-		if (demoPhase === 'running' || !listing.trim()) return;
-
-		clearDemoTimer();
-		activeQuery = listing.trim();
-		scanIntent = detectBlepIntent(activeQuery).intent;
-		scanResult = null;
-		scanMode = null;
-		scanError = null;
-		visibleLogs = [];
-		demoPhase = 'running';
-
-		const prefersReducedMotion =
-			typeof window !== 'undefined' &&
-			window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-		showLog(0, prefersReducedMotion ? 40 : 430);
-	};
-
-	onDestroy(() => {
-		clearDemoTimer();
-	});
 </script>
 
 <svelte:head>
@@ -368,34 +194,7 @@
 	onmousemove={handleMouseMove}
 />
 
-<main class="min-h-screen bg-paper text-ink selection:bg-ink selection:text-paper">
-	<header
-		class="sticky top-0 z-50 border-b border-ink/15 bg-paper/95 backdrop-blur"
-		aria-label="Site header"
-	>
-		<nav
-			class="mx-auto flex w-full max-w-300 items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8"
-			aria-label="Main"
-		>
-			<a class="focus-visible-ring flex shrink-0 items-center" href="#top" aria-label="BLEP home">
-				<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
-			</a>
-
-			<div class="hidden items-center gap-8 font-display text-sm font-semibold text-ink/70 md:flex">
-				<a class="nav-link" href="#how">How it works</a>
-				<a class="nav-link" href="#demo">Demo</a>
-				<a class="nav-link" href="#why">Why BLEP</a>
-			</div>
-
-			<a
-				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
-				href="#demo"
-			>
-				Ask BLEP
-			</a>
-		</nav>
-	</header>
-
+<main class="flex-grow">
 	<!-- ═══════════════ HERO ═══════════════ -->
 	<section
 		id="top"
@@ -564,346 +363,6 @@
 		</div>
 	</section>
 
-	<!-- ═══════════════ TRY THE JUDGE ═══════════════ -->
-	<section id="demo" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-		<div class="mx-auto w-full max-w-300 min-w-0">
-			<div
-				class="mb-8 flex flex-col justify-between gap-4 border-b border-ink/20 pb-5 md:flex-row md:items-end"
-			>
-				<div>
-					<h2 class="mt-2 font-display text-4xl font-bold sm:text-5xl">Try the judge</h2>
-				</div>
-				<p class="max-w-md text-base leading-relaxed text-ink/65">
-					Paste a listing. Drop messy specs. Or just ask what to buy.
-				</p>
-			</div>
-
-			<div
-				class="lab-card grid w-full min-w-0 gap-0 overflow-hidden border border-ink bg-white lg:grid-cols-[0.88fr_1.12fr]"
-			>
-				<form
-					class="grid gap-5 border-b border-ink/20 bg-paper p-5 sm:p-7 lg:border-r lg:border-b-0"
-					onsubmit={(event) => event.preventDefault()}
-				>
-					<div class="flex flex-wrap items-center justify-between gap-3">
-						<label class="font-mono text-xs font-bold text-ink/70 uppercase" for="listing">
-							Listing input
-						</label>
-						<span
-							class="border border-ink bg-white px-3 py-1 font-mono text-xs font-bold uppercase"
-						>
-							Brain Juice 1/2
-						</span>
-					</div>
-
-					<div class="flex flex-wrap gap-2">
-						<button
-							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-							type="button"
-							onclick={() => applyDemoQuery('Is this 7jt college laptop a trap?')}
-							disabled={demoPhase === 'running'}
-						>
-							Is this 7jt college laptop a trap?
-						</button>
-						<button
-							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-							type="button"
-							onclick={() => applyDemoQuery('Best gaming setup for 15jt?')}
-							disabled={demoPhase === 'running'}
-						>
-							Best gaming setup for 15jt?
-						</button>
-						<button
-							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-							type="button"
-							onclick={() => applyDemoQuery('Mending ASUS TUF atau Lenovo LOQ?')}
-							disabled={demoPhase === 'running'}
-						>
-							Mending ASUS TUF atau Lenovo LOQ?
-						</button>
-					</div>
-
-					<textarea
-						id="listing"
-						class="focus-visible-ring min-h-40 w-full resize-none border border-ink bg-white p-4 text-base leading-relaxed outline-none"
-						bind:value={listing}
-						placeholder="rekomendasi laptop gaming 15 juta"
-					></textarea>
-
-					<button
-						class="focus-visible-ring inline-flex min-h-12 items-center justify-center border border-ink bg-ink px-5 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-						type="button"
-						onclick={runDemo}
-						disabled={demoPhase === 'running' || !listing.trim()}
-					>
-						{demoPhase === 'running' ? 'Thinking...' : 'Judge this'}
-					</button>
-
-					<div
-						class="grid grid-cols-3 border border-ink/20 bg-white text-center font-mono text-xs font-bold text-ink/70 uppercase"
-					>
-						<span class="border-r border-ink/20 px-2 py-3">Specs</span>
-						<span class="border-r border-ink/20 px-2 py-3">Forums</span>
-						<span class="px-2 py-3">Repair</span>
-					</div>
-				</form>
-
-				<div id="verdict" class="min-h-105 min-w-0 bg-white p-5 sm:p-7">
-					{#if demoPhase === 'idle'}
-						<div
-							class="grid h-full min-h-90 place-items-center border border-dashed border-ink/35 bg-paper"
-						>
-							<div class="max-w-sm px-6 text-center">
-								<p class="font-mono text-xs font-bold text-ink/55 uppercase">BLEP is idling...</p>
-								<h3 class="mt-3 font-display text-3xl font-bold">Try to ask him.</h3>
-								<p class="mt-3 text-sm leading-relaxed text-ink/65">
-									Courtroom quiet. Feed him a listing link or budget to wake him up.
-								</p>
-								<p class="mt-4 font-mono text-xs font-bold text-ink/40 uppercase">
-									Result waits here.
-								</p>
-							</div>
-						</div>
-					{:else if demoPhase === 'running'}
-						<div class="grid min-h-90 border border-ink bg-paper p-5">
-							<div>
-								<div class="mb-5 flex items-center justify-between border-b border-ink/20 pb-3">
-									<p class="font-mono text-xs font-bold text-ink/60 uppercase">
-										BLEP inspection log
-									</p>
-									<p class="log-pulse font-mono text-xs font-bold text-ink uppercase">Analyzing</p>
-								</div>
-								<div class="space-y-3 font-mono text-sm font-bold text-ink">
-									{#each visibleLogs as log (log)}
-										<p class="log-line">{log}</p>
-									{/each}
-								</div>
-							</div>
-						</div>
-					{:else if verdictReady}
-						{#if scanError && !scanResult}
-							<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
-								<div class="max-w-md text-center">
-									<p class="font-mono text-xs font-bold text-ink/55 uppercase">Scan failed</p>
-									<h3 class="mt-3 font-display text-3xl font-bold">BLEP tripped.</h3>
-									<p class="mt-3 text-sm leading-relaxed text-ink/65">{scanError}</p>
-								</div>
-							</div>
-						{:else}
-							{#if scanMode && scanIntent}
-								<p class="mb-3 font-mono text-xs font-bold text-ink/55 uppercase">
-									{scanMode} / {scanIntent}
-								</p>
-							{/if}
-
-							{#if scanError}
-								<p
-									class="mb-3 border border-ink bg-paper p-3 font-mono text-xs font-bold text-ink/70 uppercase"
-								>
-									{scanError}
-								</p>
-							{/if}
-
-							{#if recommendationResult}
-								<RecommendationCard recommendation={recommendationResult} />
-							{:else if needsInputResult}
-								<article class="border border-ink bg-paper p-5 sm:p-6" aria-label="BLEP questions">
-									<div
-										class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
-									>
-										<div>
-											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Need input</p>
-											<h3 class="mt-1 font-display text-3xl font-bold">Not enough anchors.</h3>
-										</div>
-										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase">
-											ASK
-										</p>
-									</div>
-									<p class="mt-5 text-base leading-relaxed font-medium text-ink/80">
-										{needsInputResult.reason}
-									</p>
-									<div class="mt-5 grid gap-3 sm:grid-cols-2">
-										{#each needsInputResult.questions as question (question)}
-											<div class="detail-block">
-												<h4>Question</h4>
-												<p>{question}</p>
-											</div>
-										{/each}
-									</div>
-									<div class="mt-5 border-t border-ink/20 pt-5">
-										<p class="font-mono text-xs font-bold text-ink/55 uppercase">Examples</p>
-										<div class="mt-3 flex flex-wrap gap-2">
-											{#each needsInputResult.examples as example (example)}
-												<button
-													class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink"
-													type="button"
-													onclick={() => applyDemoQuery(example)}
-												>
-													{example}
-												</button>
-											{/each}
-										</div>
-									</div>
-								</article>
-							{:else if comparisonResult}
-								<article class="border border-ink bg-paper p-5 sm:p-6" aria-label="BLEP comparison">
-									<div
-										class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
-									>
-										<div>
-											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Comparison</p>
-											<h3 class="mt-1 font-display text-3xl font-bold">
-												{comparisonResult.winner} wins.
-											</h3>
-										</div>
-										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase">
-											{comparisonResult.verdict}
-										</p>
-									</div>
-									<p
-										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-medium"
-									>
-										{comparisonResult.reason}
-									</p>
-									<div class="mt-5 grid gap-3 md:grid-cols-2">
-										{#each comparisonResult.compared as option (option.name)}
-											<section class="detail-block">
-												<h4>{option.verdict}</h4>
-												<p>{option.name}</p>
-												<p class="mt-2 text-sm text-ink/65">
-													Strengths: {option.strengths.join(', ')}
-												</p>
-												<p class="mt-1 text-sm text-ink/65">Flaws: {option.flaws.join(', ')}</p>
-											</section>
-										{/each}
-									</div>
-								</article>
-							{:else if verdictResult}
-								<article
-									class="verdict-card border border-ink bg-paper p-5 sm:p-6"
-									aria-label="Demo verdict"
-								>
-									<div
-										class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5"
-									>
-										<div>
-											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Product</p>
-											<h3 class="mt-1 font-display text-3xl font-bold">{verdictResult.name}</h3>
-										</div>
-										<p class="stamp -rotate-3 border border-ink px-5 py-2 uppercase">
-											{verdictResult.verdict}
-										</p>
-									</div>
-
-									<div class="mt-5 grid gap-3 sm:grid-cols-3">
-										<div class="spec-chip">
-											<span>Landfill year</span>
-											<strong>{verdictResult.landfill_year}</strong>
-										</div>
-										<div class="spec-chip">
-											<span>Upgradeable</span>
-											<strong>{verdictResult.specs.upgradeable ? 'Yes' : 'No'}</strong>
-										</div>
-										<div class="spec-chip">
-											<span>Forum score</span>
-											<strong>{verdictResult.specs.forum_score}/10</strong>
-										</div>
-									</div>
-
-									<div class="mt-5 grid gap-3 md:grid-cols-2">
-										<section class="detail-block">
-											<h4>Fatal flaw</h4>
-											<p>{verdictResult.fatal_flaw}</p>
-										</section>
-										<section class="detail-block">
-											<h4>Thermal</h4>
-											<p>{verdictResult.specs.thermal}</p>
-										</section>
-									</div>
-
-									<blockquote
-										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-medium"
-									>
-										{verdictResult.roast}
-									</blockquote>
-
-									<p class="mt-5 border-t border-ink/20 pt-5 text-base leading-relaxed text-ink/75">
-										<strong class="text-ink">Summary:</strong>
-										{verdictResult.summary}
-									</p>
-								</article>
-							{:else}
-								<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
-									<div class="max-w-md text-center">
-										<p class="font-mono text-xs font-bold text-ink/55 uppercase">No result</p>
-										<h3 class="mt-3 font-display text-3xl font-bold">Nothing rendered.</h3>
-										<p class="mt-3 text-sm leading-relaxed text-ink/65">
-											Try a different hardware ask.
-										</p>
-									</div>
-								</div>
-							{/if}
-						{/if}
-					{/if}
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<!-- ═══════════════ AGENT BROADCAST TICKER ═══════════════ -->
-	<div
-		class="ticker-wrap overflow-hidden border-y-2 border-black py-4 whitespace-nowrap"
-		aria-hidden="true"
-	>
-		<div class="ticker-track flex w-max">
-			<div
-				class="ticker-content flex shrink-0 items-center font-display font-black tracking-widest text-ink uppercase"
-			>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION THINKING]</span>
-				<span>BLEP SNIFFING SELLER COPE</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION JUDGING]</span>
-				<span>BLEP COUNTING FUTURE REGRET</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION ANNOYED]</span>
-				<span>BLEP REJECTING RGB TRAPS</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION SCANNING]</span>
-				<span>BLEP DETECTING BAD SPEC</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION READING]</span>
-				<span>BLEP SCANNING FORUM THOUGHTS</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION PROCESSING]</span>
-				<span>BLEP RETICULATING SPLINES</span>
-				<span class="mx-6">■</span>
-			</div>
-			<div
-				class="ticker-content flex shrink-0 items-center font-display font-black tracking-widest text-ink uppercase"
-			>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION THINKING]</span>
-				<span>BLEP SNIFFING SELLER COPE</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION JUDGING]</span>
-				<span>BLEP COUNTING FUTURE REGRET</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION ANNOYED]</span>
-				<span>BLEP REJECTING RGB TRAPS</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION SCANNING]</span>
-				<span>BLEP DETECTING BAD SPEC</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION READING]</span>
-				<span>BLEP SCANNING FORUM THOUGHTS</span>
-				<span class="mx-6">■</span>
-				<span class="mx-6">[PLACEHOLDER EXPRESSION PROCESSING]</span>
-				<span>BLEP RETICULATING SPLINES</span>
-				<span class="mx-6">■</span>
-			</div>
-		</div>
-	</div>
-
-	<!-- ═══════════════ HOW IT WORKS — SCROLL TIMELINE ═══════════════ -->
 	<section id="how" class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-16 text-center">
@@ -933,7 +392,7 @@
 								? 'grid-column:1; grid-row:1; text-align:right;'
 								: 'grid-column:3; grid-row:1;'}
 						>
-							<span class="mb-2 block font-display text-sm font-bold text-ink/45">0{i + 1}</span>
+							<span class="mb-2 block font-body text-sm font-bold text-ink/45">0{i + 1}</span>
 							<h3 class="font-display text-2xl leading-tight font-bold sm:text-3xl">
 								{step.title}
 							</h3>
@@ -968,235 +427,9 @@
 			{/each}
 		</div>
 	</section>
-
-	<!-- ═══════════════ FOOTER ═══════════════ -->
-	<footer class="blep-footer" aria-labelledby="footer-title" bind:this={footerRef}>
-		<h2 id="footer-title" class="sr-only">Footer</h2>
-
-		<nav class="blep-footer__links" aria-label="Footer">
-			<div class="blep-footer__col blep-footer__locale">
-				<a href="#top">
-					<svg
-						class="blep-footer__locale-arrow"
-						viewBox="0 0 24 24"
-						aria-hidden="true"
-						focusable="false"
-					>
-						<path
-							d="M12 19V5m0 0-5 5m5-5 5 5"
-							fill="none"
-							stroke="currentColor"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2.25"
-						/>
-					</svg>
-					<span>Top</span>
-				</a>
-			</div>
-
-			<div class="blep-footer__col">
-				<a href="#how">How it works</a>
-				<a href="#demo">Demo</a>
-				<a href="#why">Why BLEP</a>
-				<a href="mailto:hello@blep.local">Contact</a>
-			</div>
-
-			<div class="blep-footer__col">
-				<a href={resolve('/privacy')}>Privacy Policy</a>
-				<a href={resolve('/terms')}>Terms</a>
-				<a href="#demo">Judge listing</a>
-				<a href="#verdict">Demo verdict</a>
-			</div>
-		</nav>
-
-		<button class="blep-footer__logo-wrap" type="button" aria-label="BLEP mascot">
-			<img
-				class="blep-footer__logo"
-				src="/logo-full-main.svg"
-				alt=""
-				loading="lazy"
-				decoding="async"
-			/>
-			<svg
-				class="blep-footer__logo-eyes"
-				viewBox="0 0 1440 442.5"
-				role="presentation"
-				focusable="false"
-			>
-				<g class="blep-footer-eye-mask">
-					<polygon
-						points="340.546875 253.601562 311.574219 260.203125 310.148438 225.328125 339.117188 218.726562"
-					/>
-					<polygon
-						points="280.59375 266.980469 251.625 273.582031 250.199219 238.710938 279.167969 232.109375"
-					/>
-				</g>
-				<g
-					class="blep-footer-eye-track"
-					style="transform: translate({footerInView ? $footerEyeOffset.x : 0}px, {footerInView
-						? $footerEyeOffset.y
-						: 0}px);"
-				>
-					<g class="blep-footer-face" aria-hidden="true">
-						<polygon
-							class="blep-footer-eye"
-							points="340.546875 253.601562 311.574219 260.203125 310.148438 225.328125 339.117188 218.726562"
-						/>
-						<polygon
-							class="blep-footer-eye"
-							points="280.59375 266.980469 251.625 273.582031 250.199219 238.710938 279.167969 232.109375"
-						/>
-					</g>
-				</g>
-			</svg>
-		</button>
-	</footer>
 </main>
 
 <style>
-	/* ── Navigation ── */
-	.nav-link {
-		font-family: var(--font-display);
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		text-decoration: underline;
-		text-decoration-thickness: 1px;
-		text-underline-offset: 0.25rem;
-		text-decoration-color: transparent;
-	}
-
-	.nav-link:hover {
-		color: var(--color-ink);
-		text-decoration-color: currentColor;
-	}
-
-	/* ── Footer ── */
-	.blep-footer {
-		--footer-bg: var(--color-paper);
-		--footer-ink: var(--color-ink);
-		--footer-max: 75rem;
-		--footer-pad-x: clamp(1.25rem, 5vw, 6rem);
-		--footer-pad-top: clamp(4.5rem, 12vh, 10rem);
-		--footer-link-size: clamp(1.2rem, 1.45vw, 1.75rem);
-		--footer-logo-pad: clamp(0.75rem, 1.8vw, 2rem);
-		position: relative;
-		overflow: hidden;
-		min-height: 100svh;
-		border-top: 1px solid rgba(17, 17, 17, 0.2);
-		background: var(--footer-bg);
-		color: var(--footer-ink);
-		isolation: isolate;
-	}
-
-	.blep-footer__links {
-		position: relative;
-		z-index: 2;
-		display: grid;
-		grid-template-columns: minmax(7.5rem, 1fr) minmax(12rem, 1fr) minmax(13rem, 1fr);
-		align-items: start;
-		gap: clamp(3rem, 12vw, 13.75rem);
-		max-width: var(--footer-max);
-		padding: var(--footer-pad-top) var(--footer-pad-x) 0;
-	}
-
-	.blep-footer__col {
-		display: grid;
-		align-content: start;
-		gap: 0.65rem;
-	}
-
-	.blep-footer__col a {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.55rem;
-		width: fit-content;
-		color: currentColor;
-		font-family: var(--font-display);
-		font-size: var(--footer-link-size);
-		font-weight: 600;
-		line-height: 1.12;
-		letter-spacing: 0.01em;
-		text-decoration: underline;
-		text-decoration-thickness: 0.075em;
-		text-underline-offset: 0.16em;
-	}
-
-	.blep-footer__col a:hover {
-		text-decoration-thickness: 0.12em;
-	}
-
-	.blep-footer__locale-arrow {
-		width: 0.9em;
-		height: 0.9em;
-		flex: 0 0 auto;
-		transform: translateY(-0.02em);
-	}
-
-	.blep-footer__logo-wrap {
-		position: absolute;
-		left: 50%;
-		bottom: var(--footer-logo-pad);
-		z-index: 1;
-		width: calc(100vw - (var(--footer-logo-pad) * 2));
-		border: 0;
-		background: transparent;
-		padding: 0;
-		transform: translateX(-50%);
-		cursor: pointer;
-		pointer-events: auto;
-	}
-
-	.blep-footer__logo {
-		display: block;
-		width: 100%;
-		height: auto;
-		margin: 0;
-		padding: 0;
-	}
-
-	.blep-footer__logo-eyes {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-	}
-
-	.blep-footer-eye-track,
-	.blep-footer-eye,
-	.blep-footer-eye-mask {
-		transform-box: fill-box;
-		transform-origin: center;
-	}
-
-	.blep-footer-eye-track {
-		transition: transform 180ms ease-out;
-	}
-
-	.blep-footer-eye-mask polygon {
-		fill: var(--color-paper);
-		stroke: var(--color-paper);
-		stroke-width: 26;
-		stroke-linejoin: miter;
-	}
-
-	.blep-footer-eye {
-		fill: #000000;
-		stroke: #000000;
-		stroke-width: 7;
-		stroke-linejoin: miter;
-	}
-
-	/* ── Utility ── */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
-
 	/* ── Hero ── */
 	.hero-headline {
 		font-family: var(--font-display);
@@ -1306,29 +539,6 @@
 		stroke-linejoin: miter;
 	}
 
-	/* ── Sandbox / Lab card ── */
-	.lab-card {
-		box-shadow: 8px 8px 0 rgba(17, 17, 17, 0.045);
-	}
-
-	.log-line {
-		animation: log-in 180ms ease-out both;
-	}
-
-	.log-line::before {
-		content: '';
-		display: inline-block;
-		width: 0.5rem;
-		height: 0.5rem;
-		margin-right: 0.65rem;
-		border: 1px solid #111111;
-		background: #ffffff;
-	}
-
-	.log-pulse {
-		animation: pulse-text 900ms ease-in-out infinite;
-	}
-
 	.eepy-pulse {
 		animation: eepy-pulse 3s ease-in-out infinite;
 	}
@@ -1336,51 +546,6 @@
 	.z-float {
 		opacity: 0;
 		animation: float-z 3.6s ease-in infinite;
-	}
-
-	.stamp {
-		font-family: var(--font-display);
-		font-weight: 700;
-		letter-spacing: 0.04em;
-		box-shadow: 3px 3px 0 #111111;
-	}
-
-	.spec-chip,
-	.detail-block {
-		border: 1px solid rgba(17, 17, 17, 0.35);
-		background: #ffffff;
-		padding: 1rem;
-	}
-
-	.spec-chip span,
-	.detail-block h4 {
-		display: block;
-		font-family: var(--font-mono);
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		color: rgba(17, 17, 17, 0.58);
-	}
-
-	.spec-chip strong {
-		display: block;
-		margin-top: 0.25rem;
-		font-family: var(--font-display);
-		font-size: 1.5rem;
-		font-weight: 700;
-		line-height: 1;
-	}
-
-	.detail-block p {
-		margin-top: 0.4rem;
-		font-family: var(--font-body);
-		font-weight: 500;
-		line-height: 1.6;
-	}
-
-	/* ── Agent Broadcast Ticker ── */
-	.ticker-track {
-		animation: ticker-scroll 90s linear infinite;
 	}
 
 	/* ── How It Works Timeline ── */
@@ -1424,7 +589,7 @@
 	}
 
 	.trap-num {
-		font-family: var(--font-mono);
+		font-family: var(--font-body);
 		font-weight: 700;
 		font-size: 0.75rem;
 		color: rgba(17, 17, 17, 0.55);
@@ -1468,23 +633,6 @@
 		}
 	}
 
-	@keyframes log-in {
-		from {
-			opacity: 0;
-			transform: translateY(5px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	@keyframes pulse-text {
-		50% {
-			opacity: 0.45;
-		}
-	}
-
 	@keyframes eepy-pulse {
 		0%,
 		100% {
@@ -1509,15 +657,6 @@
 		100% {
 			opacity: 0;
 			transform: translate(15px, -20px) scale(1.2);
-		}
-	}
-
-	@keyframes ticker-scroll {
-		0% {
-			transform: translateX(0);
-		}
-		100% {
-			transform: translateX(-50%);
 		}
 	}
 
@@ -1548,19 +687,6 @@
 	}
 
 	@media (max-width: 640px) {
-		.blep-footer {
-			min-height: 82svh;
-		}
-
-		.blep-footer__links {
-			grid-template-columns: 1fr 1fr;
-			gap: 2rem;
-		}
-
-		.blep-footer__locale {
-			grid-column: 1 / -1;
-		}
-
 		#top {
 			align-items: start;
 			min-height: auto;
@@ -1607,8 +733,7 @@
 		.mascot-cube,
 		.mascot-eye,
 		.eepy-pulse,
-		.z-float,
-		.ticker-track {
+		.z-float {
 			animation: none !important;
 		}
 	}
