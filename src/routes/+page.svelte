@@ -266,7 +266,7 @@
 </script>
 
 <svelte:head>
-	<title>BLEP | Tiny hardware judge</title>
+	<title>BLEP</title>
 	<meta
 		name="description"
 		content="Paste a used laptop listing. BLEP checks the evidence and tells you if it is worth it."
@@ -289,17 +289,17 @@
 			aria-label="Main"
 		>
 			<a class="focus-visible-ring flex shrink-0 items-center" href="#top" aria-label="BLEP home">
-				<img class="h-8 w-auto sm:h-10" src="/logo-full-main.svg" alt="BLEP" />
+				<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
 			</a>
 
-			<div class="hidden items-center gap-8 text-sm font-semibold text-ink/70 md:flex">
+			<div class="hidden items-center gap-8 text-sm font-semibold text-ink/70 md:flex font-display">
 				<a class="nav-link" href="#how">How it works</a>
 				<a class="nav-link" href="#demo">Demo</a>
 				<a class="nav-link" href="#why">Why BLEP</a>
 			</div>
 
 			<a
-				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 text-sm font-bold text-white transition hover:bg-white hover:text-ink"
+				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
 				href="#demo"
 			>
 				Ask BLEP
@@ -315,9 +315,9 @@
 			class="mx-auto grid w-full max-w-300 min-w-0 gap-7 lg:grid-cols-[0.45fr_0.55fr] lg:items-center"
 		>
 			<div class="relative z-10 max-w-xl min-w-0">
-				<h1 class="hero-headline max-w-xl leading-[0.94] font-bold text-balance">Buy less junk.</h1>
+				<h1 class="hero-headline font-display max-w-xl text-balance">Buy less junk.</h1>
 				<div class="mt-5 h-px w-full max-w-xs bg-ink/35"></div>
-				<p class="mt-6 max-w-md text-lg leading-relaxed text-ink/70 sm:text-xl">
+				<p class="hero-copy mt-6 max-w-md text-lg text-ink/70 sm:text-xl">
 					Paste the listing. BLEP tells you if it&apos;s worth it.
 				</p>
 				<p class="mt-5 font-mono text-sm font-bold text-ink uppercase">
@@ -326,13 +326,13 @@
 
 				<div class="mt-8 flex flex-wrap items-center gap-3">
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 text-sm font-bold text-white transition hover:bg-white hover:text-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
 						href="#demo"
 					>
 						Judge my listing
 					</a>
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 text-sm font-bold text-ink transition hover:border-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 text-sm font-display font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
 						href="#verdict"
 					>
 						See demo verdict
@@ -479,7 +479,7 @@
 				class="mb-8 flex flex-col justify-between gap-4 border-b border-ink/20 pb-5 md:flex-row md:items-end"
 			>
 				<div>
-					<h2 class="mt-2 text-4xl font-bold sm:text-5xl">Try the judge</h2>
+					<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">Try the judge</h2>
 				</div>
 				<p class="max-w-md text-base leading-relaxed text-ink/65">
 					Paste a listing or broad buyer ask.
@@ -506,7 +506,7 @@
 
 					<div class="flex flex-wrap gap-2">
 						<button
-							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-mono text-xs font-bold text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
 							type="button"
 							onclick={() => applyDemoQuery('rekomendasi laptop gaming 15 juta')}
 							disabled={demoPhase === 'running'}
@@ -523,7 +523,7 @@
 					></textarea>
 
 					<button
-						class="focus-visible-ring inline-flex min-h-12 items-center justify-center border border-ink bg-ink px-5 text-sm font-bold text-white transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+						class="focus-visible-ring inline-flex min-h-12 items-center justify-center border border-ink bg-ink px-5 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
 						type="button"
 						onclick={runDemo}
 						disabled={demoPhase === 'running' || !listing.trim()}
@@ -547,7 +547,7 @@
 						>
 							<div class="max-w-sm px-6 text-center">
 								<p class="font-mono text-xs font-bold text-ink/55 uppercase">Mock judge</p>
-								<h3 class="mt-3 text-3xl font-bold">Result waits here.</h3>
+								<h3 class="mt-3 text-3xl font-display font-bold">Result waits here.</h3>
 								<p class="mt-3 text-sm leading-relaxed text-ink/65">
 									Mock mode returns fixed data.
 								</p>
@@ -574,7 +574,7 @@
 							<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
 								<div class="max-w-md text-center">
 									<p class="font-mono text-xs font-bold text-ink/55 uppercase">Scan failed</p>
-									<h3 class="mt-3 text-3xl font-bold">BLEP tripped.</h3>
+									<h3 class="mt-3 text-3xl font-display font-bold">BLEP tripped.</h3>
 									<p class="mt-3 text-sm leading-relaxed text-ink/65">{scanError}</p>
 								</div>
 							</div>
@@ -602,15 +602,15 @@
 									>
 										<div>
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Need input</p>
-											<h3 class="mt-1 text-3xl font-bold">Not enough anchors.</h3>
+											<h3 class="mt-1 text-3xl font-display font-bold">Not enough anchors.</h3>
 										</div>
 										<p
-											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase"
+											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase"
 										>
 											ASK
 										</p>
 									</div>
-									<p class="mt-5 text-base leading-relaxed font-bold text-ink/80">
+									<p class="mt-5 text-base leading-relaxed font-medium text-ink/80">
 										{needsInputResult.reason}
 									</p>
 									<div class="mt-5 grid gap-3 sm:grid-cols-2">
@@ -626,7 +626,7 @@
 										<div class="mt-3 flex flex-wrap gap-2">
 											{#each needsInputResult.examples as example (example)}
 												<button
-													class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-mono text-xs font-bold text-ink/75 uppercase transition hover:border-ink"
+													class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink"
 													type="button"
 													onclick={() => applyDemoQuery(example)}
 												>
@@ -643,16 +643,18 @@
 									>
 										<div>
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Comparison</p>
-											<h3 class="mt-1 text-3xl font-bold">{comparisonResult.winner} wins.</h3>
+											<h3 class="mt-1 text-3xl font-display font-bold">
+												{comparisonResult.winner} wins.
+											</h3>
 										</div>
 										<p
-											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 font-bold uppercase"
+											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase"
 										>
 											{comparisonResult.verdict}
 										</p>
 									</div>
 									<p
-										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold"
+										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-medium"
 									>
 										{comparisonResult.reason}
 									</p>
@@ -679,9 +681,9 @@
 									>
 										<div>
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Product</p>
-											<h3 class="mt-1 text-3xl font-bold">{verdictResult.name}</h3>
+											<h3 class="mt-1 text-3xl font-display font-bold">{verdictResult.name}</h3>
 										</div>
-										<p class="stamp -rotate-3 border border-ink px-5 py-2 font-bold uppercase">
+										<p class="stamp -rotate-3 border border-ink px-5 py-2 uppercase">
 											{verdictResult.verdict}
 										</p>
 									</div>
@@ -713,7 +715,7 @@
 									</div>
 
 									<blockquote
-										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-bold"
+										class="mt-5 border-l-4 border-ink bg-white p-4 text-base leading-relaxed font-medium"
 									>
 										{verdictResult.roast}
 									</blockquote>
@@ -727,7 +729,7 @@
 								<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
 									<div class="max-w-md text-center">
 										<p class="font-mono text-xs font-bold text-ink/55 uppercase">No result</p>
-										<h3 class="mt-3 text-3xl font-bold">Nothing rendered.</h3>
+										<h3 class="mt-3 text-3xl font-display font-bold">Nothing rendered.</h3>
 										<p class="mt-3 text-sm leading-relaxed text-ink/65">
 											Try mock mode or send a clearer hardware ask.
 										</p>
@@ -745,7 +747,7 @@
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-10 max-w-2xl">
 				<p class="font-mono text-xs font-bold text-ink/60 uppercase">Flow</p>
-				<h2 class="mt-2 text-4xl font-bold sm:text-5xl">How it works</h2>
+				<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">How it works</h2>
 			</div>
 
 			<div class="grid gap-4 md:grid-cols-3">
@@ -819,7 +821,7 @@
 								<path d="m22 4-10 10.01-3-3" />
 							</svg>
 						{/if}
-						<h3 class="text-2xl font-bold">{step.title}</h3>
+						<h3 class="text-2xl font-display font-bold">{step.title}</h3>
 						<p class="mt-3 text-sm leading-relaxed text-ink/65">{step.text}</p>
 					</article>
 				{/each}
@@ -832,7 +834,9 @@
 			<div class="mb-10 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
 				<div>
 					<p class="font-mono text-xs font-bold text-ink/60 uppercase">Why BLEP matters</p>
-					<h2 class="mt-2 text-4xl font-bold sm:text-5xl">Cheap can still be expensive.</h2>
+					<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">
+						Cheap can still be expensive.
+					</h2>
 				</div>
 				<p class="max-w-xl text-base leading-relaxed text-ink/65 lg:justify-self-end">
 					Know before you pay.
@@ -847,7 +851,7 @@
 								class="h-full w-full translate-x-2 translate-y-2 border border-ink bg-white"
 							></div>
 						</div>
-						<h3 class="text-2xl font-bold">{reason.title}</h3>
+						<h3 class="text-2xl font-display font-bold">{reason.title}</h3>
 						<p class="mt-3 text-sm leading-relaxed text-ink/65">{reason.text}</p>
 					</article>
 				{/each}
@@ -941,6 +945,9 @@
 
 <style>
 	.nav-link {
+		font-family: var(--font-display);
+		font-weight: 600;
+		letter-spacing: 0.01em;
 		text-decoration: underline;
 		text-decoration-thickness: 1px;
 		text-underline-offset: 0.25rem;
@@ -992,9 +999,11 @@
 		gap: 0.55rem;
 		width: fit-content;
 		color: currentColor;
-		font:
-			400 var(--footer-link-size) / 1.12 Arial,
-			sans-serif;
+		font-family: var(--font-display);
+		font-size: var(--footer-link-size);
+		font-weight: 600;
+		line-height: 1.12;
+		letter-spacing: 0.01em;
 		text-decoration: underline;
 		text-decoration-thickness: 0.075em;
 		text-underline-offset: 0.16em;
@@ -1075,8 +1084,17 @@
 	}
 
 	.hero-headline {
-		font-size: clamp(3.8rem, 8vw, 7.25rem);
+		font-family: var(--font-display);
+		font-size: clamp(3.8rem, 8vw, 7rem);
+		font-weight: 800;
+		line-height: 0.92;
 		letter-spacing: 0;
+	}
+
+	.hero-copy {
+		font-family: var(--font-body);
+		font-weight: 500;
+		line-height: 1.6;
 	}
 
 	.poster-stage {
@@ -1204,6 +1222,9 @@
 	}
 
 	.stamp {
+		font-family: var(--font-display);
+		font-weight: 700;
+		letter-spacing: 0.04em;
 		box-shadow: 3px 3px 0 #111111;
 	}
 
@@ -1227,14 +1248,17 @@
 	.spec-chip strong {
 		display: block;
 		margin-top: 0.25rem;
+		font-family: var(--font-display);
 		font-size: 1.5rem;
+		font-weight: 700;
 		line-height: 1;
 	}
 
 	.detail-block p {
 		margin-top: 0.4rem;
-		font-weight: 700;
-		line-height: 1.5;
+		font-family: var(--font-body);
+		font-weight: 500;
+		line-height: 1.6;
 	}
 
 	.construct-card,
