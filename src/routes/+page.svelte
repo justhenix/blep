@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { spring } from 'svelte/motion';
 	import { fade } from 'svelte/transition';
@@ -12,51 +12,56 @@
 
 	const demoLogs = [
 		'[blep checking specs...]',
-		'[blep scanning forum complaints...]',
-		'[blep checking repairability...]',
-		'[blep comparing price to regret...]',
+		'[blep sniffing seller cope...]',
+		'[blep scanning forum thoughts...]',
+		'[blep comparing price bracket...]',
 		'[blep preparing verdict...]'
 	];
 
 	const recommendationLogs = [
 		'[blep reading budget...]',
 		'[blep hunting same-price alternatives...]',
-		'[blep rejecting RGB traps...]',
+		'[blep scanning forum thoughts...]',
+		'[blep rejecting rgb traps...]',
 		'[blep checking thermals...]',
 		'[blep building shortlist...]'
 	];
 
-	const steps = [
+	const timelineData = [
 		{
-			title: 'Paste',
-			text: 'Drop in a used listing.'
+			title: 'Capture',
+			body: 'Paste messy listing text. BLEP strips the seller fog.'
 		},
 		{
-			title: 'Check',
-			text: 'Specs, reviews, complaints, repairability.'
+			title: 'Dissect',
+			body: 'It checks component age, heat, repair traps, and real complaints.'
 		},
 		{
-			title: 'Decide',
-			text: 'Approved. Caution. Waste.'
+			title: 'Sentence',
+			body: 'You get APPROVED, CAUTION, or WASTE. No polite fog.'
+		},
+		{
+			title: 'Press X for Doubt',
+			body: 'Still coping? Ask follow-up. BLEP explains why the deal stinks.'
 		}
 	];
 
-	const reasons = [
+	const traps = [
 		{
-			title: 'Save money',
-			text: 'Cheap can still be expensive.'
+			title: 'The Fake New Trap',
+			body: 'Old parts in a sealed box are still old. BLEP checks hardware age before you buy a slow paperweight.'
 		},
 		{
-			title: 'Avoid landfill tech',
-			text: 'Some devices are already done.'
+			title: 'The Permanent Slowdown',
+			body: 'Soldered memory means zero upgrade path. Cute today, painful later.'
 		},
 		{
-			title: 'Read between specs',
-			text: 'Listings hide the bad parts.'
+			title: 'The Finger Burner',
+			body: 'Great specs mean nothing if the chassis hits 95\u00b0C and throttles itself into sadness.'
 		}
 	];
 
-	let listing = $state('Used ThinkPad T480, i5, 8GB RAM, 256GB SSD, $180');
+	let listing = $state('');
 	let demoPhase = $state<DemoPhase>('idle');
 	let visibleLogs = $state<string[]>([]);
 	let scanResult = $state<BlepPhase1Output | null>(null);
@@ -73,6 +78,10 @@
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
 	let footerInView = $state(false);
 	let footerRef = $state<HTMLElement | null>(null);
+	let activeStep = $state(0);
+	let stepEls: HTMLElement[] = [];
+	let spineEl = $state<HTMLElement | null>(null);
+	let indicatorEl = $state<HTMLElement | null>(null);
 
 	const eyeOffset = spring(
 		{ x: 0, y: 0 },
@@ -160,14 +169,93 @@
 		return () => observer.disconnect();
 	});
 
-	const plannedIntent = $derived(detectBlepIntent(listing).intent);
-	const submitLabel = $derived(
-		plannedIntent === 'RECOMMENDATION_SCAN'
-			? 'Build shortlist'
-			: plannedIntent === 'COMPARISON_SCAN'
-				? 'Compare devices'
-				: 'Judge this listing'
-	);
+	// Timeline scroll observer — track which step is closest to viewport center
+	onMount(() => {
+		if (typeof IntersectionObserver === 'undefined') return;
+
+		const visible = new Set<number>();
+
+		const pickClosest = () => {
+			if (visible.size === 0) return;
+			const mid = window.innerHeight / 2;
+			let best = activeStep;
+			let bestDist = Infinity;
+			for (const idx of visible) {
+				const el = stepEls[idx];
+				if (!el) continue;
+				const rect = el.getBoundingClientRect();
+				const center = rect.top + rect.height / 2;
+				const dist = Math.abs(center - mid);
+				if (dist < bestDist) {
+					bestDist = dist;
+					best = idx;
+				}
+			}
+			activeStep = best;
+		};
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					const idx = stepEls.indexOf(entry.target as HTMLElement);
+					if (idx === -1) continue;
+					if (entry.isIntersecting) visible.add(idx);
+					else visible.delete(idx);
+				}
+				pickClosest();
+			},
+			{ rootMargin: '-40% 0px -40% 0px' }
+		);
+
+		for (const el of stepEls) observer.observe(el);
+
+		// Dynamic active indicator top calculation
+		const updateIndicatorPosition = () => {
+			if (!spineEl || stepEls.length === 0) return;
+			const firstStep = stepEls[0];
+			const lastStep = stepEls[stepEls.length - 1];
+			if (!firstStep || !lastStep) return;
+
+			const spineRect = spineEl.getBoundingClientRect();
+			const spineTop = spineRect.top + window.scrollY;
+
+			// We calculate the Y positions of the vertical center of the first and last cards
+			const firstStepRect = firstStep.getBoundingClientRect();
+			const lastStepRect = lastStep.getBoundingClientRect();
+
+			const yStart = firstStepRect.top + firstStepRect.height / 2 + window.scrollY - spineTop;
+			const yEnd = lastStepRect.top + lastStepRect.height / 2 + window.scrollY - spineTop;
+
+			// The indicator follows the exact center of the viewport
+			const viewportCenter = window.scrollY + window.innerHeight / 2;
+			const centerRelativeToSpine = viewportCenter - spineTop;
+
+			// Clamp it between the first and last step centers
+			const targetY = Math.max(yStart, Math.min(centerRelativeToSpine, yEnd));
+
+			if (indicatorEl) {
+				indicatorEl.style.top = `${targetY}px`;
+			}
+		};
+
+		const handleScroll = () => {
+			requestAnimationFrame(updateIndicatorPosition);
+		};
+
+		window.addEventListener('scroll', handleScroll, { passive: true });
+		window.addEventListener('resize', handleScroll, { passive: true });
+
+		// Trigger initial calculations after a short delay so layout resolves
+		const initialTimeout = setTimeout(updateIndicatorPosition, 100);
+
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('scroll', handleScroll);
+			window.removeEventListener('resize', handleScroll);
+			clearTimeout(initialTimeout);
+		};
+	});
+
 	const activeLogs = $derived(scanIntent === 'RECOMMENDATION_SCAN' ? recommendationLogs : demoLogs);
 	const verdictReady = $derived(demoPhase === 'done');
 	const verdictResult = $derived(scanResult?.mode === 'VERDICT' ? scanResult : null);
@@ -269,7 +357,7 @@
 	<title>BLEP</title>
 	<meta
 		name="description"
-		content="Paste a used laptop listing. BLEP checks the evidence and tells you if it is worth it."
+		content="Paste a listing or ask what to buy. BLEP judges hardware deals against live market reality."
 	/>
 </svelte:head>
 
@@ -307,6 +395,7 @@
 		</nav>
 	</header>
 
+	<!-- ═══════════════ HERO ═══════════════ -->
 	<section
 		id="top"
 		class="flex min-h-[calc(100svh-4rem)] flex-col justify-center overflow-hidden border-b border-ink/15 px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
@@ -318,7 +407,8 @@
 				<h1 class="hero-headline font-display max-w-xl text-balance">Buy less junk.</h1>
 				<div class="mt-5 h-px w-full max-w-xs bg-ink/35"></div>
 				<p class="hero-copy mt-6 max-w-md text-lg text-ink/70 sm:text-xl">
-					Paste the listing. BLEP tells you if it&apos;s worth it.
+					Sellers overhype basic toasters. Paste a listing or ask what to buy. BLEP tells you if
+					it&apos;s a steal, sketchy, or wallet poison.
 				</p>
 				<p class="mt-5 font-mono text-sm font-bold text-ink uppercase">
 					Approved / Caution / Waste
@@ -329,13 +419,13 @@
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
 						href="#demo"
 					>
-						Judge my listing
+						Ask BLEP
 					</a>
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 text-sm font-display font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
-						href="#verdict"
+						href="#demo"
 					>
-						See demo verdict
+						Compare laptops
 					</a>
 				</div>
 			</div>
@@ -473,6 +563,7 @@
 		</div>
 	</section>
 
+	<!-- ═══════════════ TRY THE JUDGE ═══════════════ -->
 	<section id="demo" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div
@@ -482,7 +573,7 @@
 					<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">Try the judge</h2>
 				</div>
 				<p class="max-w-md text-base leading-relaxed text-ink/65">
-					Paste a listing or broad buyer ask.
+					Paste a listing. Drop messy specs. Or just ask what to buy.
 				</p>
 			</div>
 
@@ -508,10 +599,26 @@
 						<button
 							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
 							type="button"
-							onclick={() => applyDemoQuery('rekomendasi laptop gaming 15 juta')}
+							onclick={() => applyDemoQuery('Is this 7jt college laptop a trap?')}
 							disabled={demoPhase === 'running'}
 						>
-							rekomendasi laptop gaming 15 juta
+							Is this 7jt college laptop a trap?
+						</button>
+						<button
+							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+							type="button"
+							onclick={() => applyDemoQuery('Best gaming setup for 15jt?')}
+							disabled={demoPhase === 'running'}
+						>
+							Best gaming setup for 15jt?
+						</button>
+						<button
+							class="focus-visible-ring border border-ink/35 bg-white px-3 py-2 font-display text-xs font-semibold tracking-[0.02em] text-ink/75 uppercase transition hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+							type="button"
+							onclick={() => applyDemoQuery('Mending ASUS TUF atau Lenovo LOQ?')}
+							disabled={demoPhase === 'running'}
+						>
+							Mending ASUS TUF atau Lenovo LOQ?
 						</button>
 					</div>
 
@@ -519,7 +626,7 @@
 						id="listing"
 						class="focus-visible-ring min-h-40 w-full resize-none border border-ink bg-white p-4 text-base leading-relaxed outline-none"
 						bind:value={listing}
-						placeholder="Paste listing, device name, broad recommendation ask, or comparison."
+						placeholder="rekomendasi laptop gaming 15 juta"
 					></textarea>
 
 					<button
@@ -528,7 +635,7 @@
 						onclick={runDemo}
 						disabled={demoPhase === 'running' || !listing.trim()}
 					>
-						{demoPhase === 'running' ? 'Thinking...' : submitLabel}
+						{demoPhase === 'running' ? 'Thinking...' : 'Judge this'}
 					</button>
 
 					<div
@@ -546,10 +653,15 @@
 							class="grid h-full min-h-90 place-items-center border border-dashed border-ink/35 bg-paper"
 						>
 							<div class="max-w-sm px-6 text-center">
-								<p class="font-mono text-xs font-bold text-ink/55 uppercase">Mock judge</p>
-								<h3 class="mt-3 text-3xl font-display font-bold">Result waits here.</h3>
+								<p class="font-mono text-xs font-bold text-ink/55 uppercase">
+									BLEP is idling...
+								</p>
+								<h3 class="mt-3 text-3xl font-display font-bold">Try to ask him.</h3>
 								<p class="mt-3 text-sm leading-relaxed text-ink/65">
-									Mock mode returns fixed data.
+									Courtroom quiet. Feed him a listing link or budget to wake him up.
+								</p>
+								<p class="mt-4 font-mono text-xs font-bold text-ink/40 uppercase">
+									Result waits here.
 								</p>
 							</div>
 						</div>
@@ -731,7 +843,7 @@
 										<p class="font-mono text-xs font-bold text-ink/55 uppercase">No result</p>
 										<h3 class="mt-3 text-3xl font-display font-bold">Nothing rendered.</h3>
 										<p class="mt-3 text-sm leading-relaxed text-ink/65">
-											Try mock mode or send a clearer hardware ask.
+											Try a different hardware ask.
 										</p>
 									</div>
 								</div>
@@ -743,98 +855,67 @@
 		</div>
 	</section>
 
+	<!-- ═══════════════ AGENT BROADCAST TICKER ═══════════════ -->
+	<div class="ticker-wrap" aria-hidden="true">
+		<div class="ticker-track">
+			<span class="ticker-content"
+				>blep sniffing seller cope / blep counting future regret / blep rejecting rgb traps / blep
+				tracking real user thermal complaints /&nbsp;</span
+			>
+			<span class="ticker-content"
+				>blep sniffing seller cope / blep counting future regret / blep rejecting rgb traps / blep
+				tracking real user thermal complaints /&nbsp;</span
+			>
+		</div>
+	</div>
+
+	<!-- ═══════════════ HOW IT WORKS — SCROLL TIMELINE ═══════════════ -->
 	<section id="how" class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
-			<div class="mb-10 max-w-2xl">
-				<p class="font-mono text-xs font-bold text-ink/60 uppercase">Flow</p>
-				<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">How it works</h2>
+			<div class="mb-16 text-center">
+				<h2 class="text-4xl font-display font-bold sm:text-5xl">How it works</h2>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-3">
-				{#each steps as step, index (step.title)}
-					<article class="construct-card relative min-h-64 border border-ink bg-white p-5">
-						<div class="mb-8 flex items-center justify-between">
-							<span class="font-mono text-xs font-bold text-ink/55 uppercase">0{index + 1}</span>
-							<svg class="h-8 w-16 text-ink" viewBox="0 0 64 32" aria-hidden="true">
-								<path
-									d="M4 16h50M44 7l10 9-10 9"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-								/>
-							</svg>
+			<div class="timeline-spine" bind:this={spineEl}>
+				<!-- Dynamic active scroll indicator node -->
+				<div
+					bind:this={indicatorEl}
+					class="absolute bg-ink pointer-events-none z-10
+						w-3 h-3 md:w-4 md:h-4
+						left-[0.5rem] md:left-1/2 -translate-x-1/2 -translate-y-1/2
+						transition-[top] duration-300 ease-out"
+				></div>
+
+				{#each timelineData as step, i (step.title)}
+					<div
+						class="timeline-step"
+						bind:this={stepEls[i]}
+					>
+						<div
+							class="w-[1.125rem] h-[1.125rem] shrink-0"
+							style="grid-column:2; grid-row:1; justify-self:center; align-self:start; margin-top:2.25rem; z-index:1;"
+						></div>
+						<div
+							class="p-8 md:p-12 bg-white transition-all duration-300
+								{activeStep === i ? 'opacity-100 border border-ink' : 'opacity-40 border border-ink/10'}"
+							style="{i % 2 === 0 ? 'grid-column:1; grid-row:1; text-align:right;' : 'grid-column:3; grid-row:1;'}"
+						>
+							<span class="block font-display text-sm font-bold text-ink/45 mb-2">0{i + 1}</span>
+							<h3 class="font-display text-2xl font-bold leading-tight sm:text-3xl">{step.title}</h3>
+							<p class="mt-3 text-base font-medium text-ink/65 leading-relaxed">{step.body}</p>
 						</div>
-						{#if index === 0}
-							<!-- Paste SVG (lucide-clipboard) -->
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="24"
-								height="24"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								class="mb-5 h-8 w-8 text-ink"
-								aria-hidden="true"
-							>
-								<rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
-								<path
-									d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
-								/>
-							</svg>
-						{:else if index === 1}
-							<!-- Check SVG (lucide-search) -->
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="24"
-								height="24"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								class="mb-5 h-8 w-8 text-ink"
-								aria-hidden="true"
-							>
-								<circle cx="11" cy="11" r="8" />
-								<path d="m21 21-4.3-4.3" />
-							</svg>
-						{:else}
-							<!-- Decide SVG (lucide-check-circle) -->
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								width="24"
-								height="24"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2.5"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								class="mb-5 h-8 w-8 text-ink"
-								aria-hidden="true"
-							>
-								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-								<path d="m22 4-10 10.01-3-3" />
-							</svg>
-						{/if}
-						<h3 class="text-2xl font-display font-bold">{step.title}</h3>
-						<p class="mt-3 text-sm leading-relaxed text-ink/65">{step.text}</p>
-					</article>
+					</div>
 				{/each}
 			</div>
 		</div>
 	</section>
 
+	<!-- ═══════════════ TRAP DETECTOR ═══════════════ -->
 	<section id="why" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-10 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
 				<div>
-					<p class="font-mono text-xs font-bold text-ink/60 uppercase">Why BLEP matters</p>
-					<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">
+					<h2 class="text-4xl font-display font-bold sm:text-5xl">
 						Cheap can still be expensive.
 					</h2>
 				</div>
@@ -843,22 +924,19 @@
 				</p>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-3">
-				{#each reasons as reason (reason.title)}
-					<article class="reason-card border border-ink/35 bg-white p-5">
-						<div class="mb-6 h-12 w-12 border border-ink bg-paper">
-							<div
-								class="h-full w-full translate-x-2 translate-y-2 border border-ink bg-white"
-							></div>
-						</div>
-						<h3 class="text-2xl font-display font-bold">{reason.title}</h3>
-						<p class="mt-3 text-sm leading-relaxed text-ink/65">{reason.text}</p>
-					</article>
-				{/each}
-			</div>
+			{#each traps as trap, i (trap.title)}
+				<article class="trap-row">
+					<span class="trap-num">0{i + 1}</span>
+					<div class="min-w-0">
+						<h3 class="trap-heading">{trap.title}</h3>
+						<p class="trap-body">{trap.body}</p>
+					</div>
+				</article>
+			{/each}
 		</div>
 	</section>
 
+	<!-- ═══════════════ FOOTER ═══════════════ -->
 	<footer class="blep-footer" aria-labelledby="footer-title" bind:this={footerRef}>
 		<h2 id="footer-title" class="sr-only">Footer</h2>
 
@@ -944,6 +1022,7 @@
 </main>
 
 <style>
+	/* ── Navigation ── */
 	.nav-link {
 		font-family: var(--font-display);
 		font-weight: 600;
@@ -959,6 +1038,7 @@
 		text-decoration-color: currentColor;
 	}
 
+	/* ── Footer ── */
 	.blep-footer {
 		--footer-bg: var(--color-paper);
 		--footer-ink: var(--color-ink);
@@ -1074,6 +1154,7 @@
 		stroke-linejoin: miter;
 	}
 
+	/* ── Utility ── */
 	.sr-only {
 		position: absolute;
 		width: 1px;
@@ -1083,6 +1164,7 @@
 		white-space: nowrap;
 	}
 
+	/* ── Hero ── */
 	.hero-headline {
 		font-family: var(--font-display);
 		font-size: clamp(3.8rem, 8vw, 7rem);
@@ -1133,6 +1215,7 @@
 		height: 2px;
 	}
 
+	/* ── Mascot ── */
 	.mascot-cube {
 		filter: drop-shadow(8px 10px 0 rgba(17, 17, 17, 0.055));
 		animation: mascot-float 5.5s ease-in-out infinite;
@@ -1190,6 +1273,7 @@
 		stroke-linejoin: miter;
 	}
 
+	/* ── Sandbox / Lab card ── */
 	.lab-card {
 		box-shadow: 8px 8px 0 rgba(17, 17, 17, 0.045);
 	}
@@ -1261,19 +1345,93 @@
 		line-height: 1.6;
 	}
 
-	.construct-card,
-	.reason-card {
-		transition:
-			transform 160ms ease,
-			box-shadow 160ms ease;
+	/* ── Agent Broadcast Ticker ── */
+	.ticker-wrap {
+		overflow: hidden;
+		border-top: 1px solid rgba(17, 17, 17, 0.2);
+		border-bottom: 1px solid rgba(17, 17, 17, 0.2);
+		padding: 0.85rem 0;
+		white-space: nowrap;
 	}
 
-	.construct-card:hover,
-	.reason-card:hover {
-		transform: translate(-2px, -2px);
-		box-shadow: 6px 6px 0 rgba(17, 17, 17, 0.1);
+	.ticker-track {
+		display: inline-flex;
+		animation: ticker-scroll 32s linear infinite;
 	}
 
+	.ticker-content {
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 0.875rem;
+		letter-spacing: 0.01em;
+		color: var(--color-ink);
+		flex-shrink: 0;
+	}
+
+	/* ── How It Works Timeline ── */
+	.timeline-spine {
+		position: relative;
+		max-width: 56rem;
+		margin: 0 auto;
+	}
+
+	.timeline-spine::before {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 0;
+		bottom: 0;
+		border-left: 2px dotted rgba(17, 17, 17, 0.25);
+		transform: translateX(-50%);
+	}
+
+	.timeline-step {
+		position: relative;
+		display: grid;
+		grid-template-columns: 1fr 2.5rem 1fr;
+		align-items: start;
+		padding: 1.5rem 0;
+	}
+
+	/* ── Trap Detector ── */
+	.trap-row {
+		display: grid;
+		grid-template-columns: 3.5rem 1fr;
+		gap: 1.5rem;
+		align-items: start;
+		padding: 1.75rem 0;
+		border-top: 3px solid var(--color-ink);
+		transition: background-color 160ms ease;
+	}
+
+	.trap-row:hover {
+		background-color: var(--color-paper-dark);
+	}
+
+	.trap-num {
+		font-family: var(--font-mono);
+		font-weight: 700;
+		font-size: 0.75rem;
+		color: rgba(17, 17, 17, 0.55);
+		padding-top: 0.35rem;
+	}
+
+	.trap-heading {
+		font-family: var(--font-display);
+		font-weight: 700;
+		font-size: 1.5rem;
+		line-height: 1.2;
+	}
+
+	.trap-body {
+		margin-top: 0.5rem;
+		font-family: var(--font-body);
+		font-weight: 500;
+		color: rgba(17, 17, 17, 0.65);
+		line-height: 1.6;
+	}
+
+	/* ── Keyframes ── */
 	@keyframes mascot-float {
 		0%,
 		100% {
@@ -1339,6 +1497,41 @@
 		}
 	}
 
+	@keyframes ticker-scroll {
+		0% {
+			transform: translateX(0);
+		}
+		100% {
+			transform: translateX(-50%);
+		}
+	}
+
+	/* ── Mobile ── */
+	@media (max-width: 768px) {
+		.timeline-spine::before {
+			left: 0.5rem;
+		}
+
+		.timeline-step {
+			grid-template-columns: 1.75rem 1fr;
+			padding: 1rem 0;
+		}
+
+		/* Mobile: force node col-1, card col-2, left-align for all steps */
+		.timeline-step > :first-child {
+			grid-column: 1 !important;
+			width: 0.875rem !important;
+			height: 0.875rem !important;
+			margin-top: 1.25rem !important;
+		}
+
+		.timeline-step > :last-child {
+			grid-column: 2 !important;
+			grid-row: 1 !important;
+			text-align: left !important;
+		}
+	}
+
 	@media (max-width: 640px) {
 		.blep-footer {
 			min-height: 82svh;
@@ -1399,7 +1592,8 @@
 		.mascot-cube,
 		.mascot-eye,
 		.eepy-pulse,
-		.z-float {
+		.z-float,
+		.ticker-track {
 			animation: none !important;
 		}
 	}
