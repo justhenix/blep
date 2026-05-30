@@ -15,11 +15,14 @@
 	const specRows = $derived(Object.entries(recommendation.target_specs));
 </script>
 
-<article class="recommendation-card border border-ink bg-paper p-5 sm:p-6" aria-label="BLEP recommendation">
+<article
+	class="recommendation-card border border-ink bg-paper p-5 sm:p-6"
+	aria-label="BLEP recommendation"
+>
 	<header class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5">
 		<div>
 			<p class="font-mono text-xs font-bold text-ink/60 uppercase">Recommendation</p>
-			<h3 class="mt-1 text-3xl font-display font-bold">Gaming laptop shortlist</h3>
+			<h3 class="mt-1 font-display text-3xl font-bold">Gaming laptop shortlist</h3>
 		</div>
 		<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase">
 			{recommendation.confidence}
@@ -71,7 +74,7 @@
 							<p class="font-mono text-xs font-bold text-ink/55 uppercase">
 								{labelFor(pick.label)}
 							</p>
-							<h5 class="mt-1 text-xl font-display font-bold">{pick.name}</h5>
+							<h5 class="mt-1 font-display text-xl font-bold">{pick.name}</h5>
 						</div>
 						<p class="font-mono text-xs font-bold text-ink/65 uppercase">
 							{formatIdr(pick.expected_price_idr)}

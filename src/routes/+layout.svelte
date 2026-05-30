@@ -17,8 +17,7 @@
 		>
 			<a
 				class="font-display font-bold tracking-[0.02em] underline decoration-2 underline-offset-4"
-				href={resolve('/')}
-				>BLEP</a
+				href={resolve('/')}>BLEP</a
 			>
 			<a
 				class="font-display font-medium tracking-[0.02em] underline decoration-2 underline-offset-4"

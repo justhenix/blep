@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import { spring } from 'svelte/motion';
 	import { fade } from 'svelte/transition';
@@ -173,7 +174,7 @@
 	onMount(() => {
 		if (typeof IntersectionObserver === 'undefined') return;
 
-		const visible = new Set<number>();
+		const visible = new SvelteSet<number>();
 
 		const pickClosest = () => {
 			if (visible.size === 0) return;
@@ -380,14 +381,14 @@
 				<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
 			</a>
 
-			<div class="hidden items-center gap-8 text-sm font-semibold text-ink/70 md:flex font-display">
+			<div class="hidden items-center gap-8 font-display text-sm font-semibold text-ink/70 md:flex">
 				<a class="nav-link" href="#how">How it works</a>
 				<a class="nav-link" href="#demo">Demo</a>
 				<a class="nav-link" href="#why">Why BLEP</a>
 			</div>
 
 			<a
-				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
 				href="#demo"
 			>
 				Ask BLEP
@@ -404,7 +405,7 @@
 			class="mx-auto grid w-full max-w-300 min-w-0 gap-7 lg:grid-cols-[0.45fr_0.55fr] lg:items-center"
 		>
 			<div class="relative z-10 max-w-xl min-w-0">
-				<h1 class="hero-headline font-display max-w-xl text-balance">Buy less junk.</h1>
+				<h1 class="hero-headline max-w-xl font-display text-balance">Buy less junk.</h1>
 				<div class="mt-5 h-px w-full max-w-xs bg-ink/35"></div>
 				<p class="hero-copy mt-6 max-w-md text-lg text-ink/70 sm:text-xl">
 					Sellers overhype basic toasters. Paste a listing or ask what to buy. BLEP tells you if
@@ -416,13 +417,13 @@
 
 				<div class="mt-8 flex flex-wrap items-center gap-3">
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
 						href="#demo"
 					>
 						Ask BLEP
 					</a>
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 text-sm font-display font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
 						href="#demo"
 					>
 						Compare laptops
@@ -570,7 +571,7 @@
 				class="mb-8 flex flex-col justify-between gap-4 border-b border-ink/20 pb-5 md:flex-row md:items-end"
 			>
 				<div>
-					<h2 class="mt-2 text-4xl font-display font-bold sm:text-5xl">Try the judge</h2>
+					<h2 class="mt-2 font-display text-4xl font-bold sm:text-5xl">Try the judge</h2>
 				</div>
 				<p class="max-w-md text-base leading-relaxed text-ink/65">
 					Paste a listing. Drop messy specs. Or just ask what to buy.
@@ -630,7 +631,7 @@
 					></textarea>
 
 					<button
-						class="focus-visible-ring inline-flex min-h-12 items-center justify-center border border-ink bg-ink px-5 text-sm font-display font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+						class="focus-visible-ring inline-flex min-h-12 items-center justify-center border border-ink bg-ink px-5 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
 						type="button"
 						onclick={runDemo}
 						disabled={demoPhase === 'running' || !listing.trim()}
@@ -653,10 +654,8 @@
 							class="grid h-full min-h-90 place-items-center border border-dashed border-ink/35 bg-paper"
 						>
 							<div class="max-w-sm px-6 text-center">
-								<p class="font-mono text-xs font-bold text-ink/55 uppercase">
-									BLEP is idling...
-								</p>
-								<h3 class="mt-3 text-3xl font-display font-bold">Try to ask him.</h3>
+								<p class="font-mono text-xs font-bold text-ink/55 uppercase">BLEP is idling...</p>
+								<h3 class="mt-3 font-display text-3xl font-bold">Try to ask him.</h3>
 								<p class="mt-3 text-sm leading-relaxed text-ink/65">
 									Courtroom quiet. Feed him a listing link or budget to wake him up.
 								</p>
@@ -686,7 +685,7 @@
 							<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
 								<div class="max-w-md text-center">
 									<p class="font-mono text-xs font-bold text-ink/55 uppercase">Scan failed</p>
-									<h3 class="mt-3 text-3xl font-display font-bold">BLEP tripped.</h3>
+									<h3 class="mt-3 font-display text-3xl font-bold">BLEP tripped.</h3>
 									<p class="mt-3 text-sm leading-relaxed text-ink/65">{scanError}</p>
 								</div>
 							</div>
@@ -714,11 +713,9 @@
 									>
 										<div>
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Need input</p>
-											<h3 class="mt-1 text-3xl font-display font-bold">Not enough anchors.</h3>
+											<h3 class="mt-1 font-display text-3xl font-bold">Not enough anchors.</h3>
 										</div>
-										<p
-											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase"
-										>
+										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase">
 											ASK
 										</p>
 									</div>
@@ -755,13 +752,11 @@
 									>
 										<div>
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Comparison</p>
-											<h3 class="mt-1 text-3xl font-display font-bold">
+											<h3 class="mt-1 font-display text-3xl font-bold">
 												{comparisonResult.winner} wins.
 											</h3>
 										</div>
-										<p
-											class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase"
-										>
+										<p class="stamp -rotate-2 border border-ink bg-white px-5 py-2 uppercase">
 											{comparisonResult.verdict}
 										</p>
 									</div>
@@ -793,7 +788,7 @@
 									>
 										<div>
 											<p class="font-mono text-xs font-bold text-ink/60 uppercase">Product</p>
-											<h3 class="mt-1 text-3xl font-display font-bold">{verdictResult.name}</h3>
+											<h3 class="mt-1 font-display text-3xl font-bold">{verdictResult.name}</h3>
 										</div>
 										<p class="stamp -rotate-3 border border-ink px-5 py-2 uppercase">
 											{verdictResult.verdict}
@@ -841,7 +836,7 @@
 								<div class="grid min-h-90 place-items-center border border-ink bg-paper p-6">
 									<div class="max-w-md text-center">
 										<p class="font-mono text-xs font-bold text-ink/55 uppercase">No result</p>
-										<h3 class="mt-3 text-3xl font-display font-bold">Nothing rendered.</h3>
+										<h3 class="mt-3 font-display text-3xl font-bold">Nothing rendered.</h3>
 										<p class="mt-3 text-sm leading-relaxed text-ink/65">
 											Try a different hardware ask.
 										</p>
@@ -856,9 +851,14 @@
 	</section>
 
 	<!-- ═══════════════ AGENT BROADCAST TICKER ═══════════════ -->
-	<div class="ticker-wrap overflow-hidden whitespace-nowrap border-y-2 border-black py-4" aria-hidden="true">
+	<div
+		class="ticker-wrap overflow-hidden border-y-2 border-black py-4 whitespace-nowrap"
+		aria-hidden="true"
+	>
 		<div class="ticker-track flex w-max">
-			<div class="ticker-content flex shrink-0 items-center font-display font-black uppercase tracking-widest text-ink">
+			<div
+				class="ticker-content flex shrink-0 items-center font-display font-black tracking-widest text-ink uppercase"
+			>
 				<span class="mx-6">[PLACEHOLDER EXPRESSION THINKING]</span>
 				<span>BLEP SNIFFING SELLER COPE</span>
 				<span class="mx-6">■</span>
@@ -878,7 +878,9 @@
 				<span>BLEP RETICULATING SPLINES</span>
 				<span class="mx-6">■</span>
 			</div>
-			<div class="ticker-content flex shrink-0 items-center font-display font-black uppercase tracking-widest text-ink">
+			<div
+				class="ticker-content flex shrink-0 items-center font-display font-black tracking-widest text-ink uppercase"
+			>
 				<span class="mx-6">[PLACEHOLDER EXPRESSION THINKING]</span>
 				<span>BLEP SNIFFING SELLER COPE</span>
 				<span class="mx-6">■</span>
@@ -905,36 +907,37 @@
 	<section id="how" class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-16 text-center">
-				<h2 class="text-4xl font-display font-bold sm:text-5xl">How it works</h2>
+				<h2 class="font-display text-4xl font-bold sm:text-5xl">How it works</h2>
 			</div>
 
 			<div class="timeline-spine" bind:this={spineEl}>
 				<!-- Dynamic active scroll indicator node -->
 				<div
 					bind:this={indicatorEl}
-					class="absolute bg-ink pointer-events-none z-10
-						w-3 h-3 md:w-4 md:h-4
-						left-[0.5rem] md:left-1/2 -translate-x-1/2 -translate-y-1/2
-						transition-[top] duration-300 ease-out"
+					class="pointer-events-none absolute left-2 z-10
+						h-3 w-3 -translate-x-1/2 -translate-y-1/2
+						bg-ink transition-[top] duration-300 ease-out
+						md:left-1/2 md:h-4 md:w-4"
 				></div>
 
 				{#each timelineData as step, i (step.title)}
-					<div
-						class="timeline-step"
-						bind:this={stepEls[i]}
-					>
+					<div class="timeline-step" bind:this={stepEls[i]}>
 						<div
-							class="w-[1.125rem] h-[1.125rem] shrink-0"
+							class="h-4.5 w-4.5 shrink-0"
 							style="grid-column:2; grid-row:1; justify-self:center; align-self:start; margin-top:2.25rem; z-index:1;"
 						></div>
 						<div
-							class="p-8 md:p-12 bg-white transition-all duration-300
-								{activeStep === i ? 'opacity-100 border border-ink' : 'opacity-40 border border-ink/10'}"
-							style="{i % 2 === 0 ? 'grid-column:1; grid-row:1; text-align:right;' : 'grid-column:3; grid-row:1;'}"
+							class="bg-white p-8 transition-all duration-300 md:p-12
+								{activeStep === i ? 'border border-ink opacity-100' : 'border border-ink/10 opacity-40'}"
+							style={i % 2 === 0
+								? 'grid-column:1; grid-row:1; text-align:right;'
+								: 'grid-column:3; grid-row:1;'}
 						>
-							<span class="block font-display text-sm font-bold text-ink/45 mb-2">0{i + 1}</span>
-							<h3 class="font-display text-2xl font-bold leading-tight sm:text-3xl">{step.title}</h3>
-							<p class="mt-3 text-base font-medium text-ink/65 leading-relaxed">{step.body}</p>
+							<span class="mb-2 block font-display text-sm font-bold text-ink/45">0{i + 1}</span>
+							<h3 class="font-display text-2xl leading-tight font-bold sm:text-3xl">
+								{step.title}
+							</h3>
+							<p class="mt-3 text-base leading-relaxed font-medium text-ink/65">{step.body}</p>
 						</div>
 					</div>
 				{/each}
@@ -947,9 +950,7 @@
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-10 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
 				<div>
-					<h2 class="text-4xl font-display font-bold sm:text-5xl">
-						Cheap can still be expensive.
-					</h2>
+					<h2 class="font-display text-4xl font-bold sm:text-5xl">Cheap can still be expensive.</h2>
 				</div>
 				<p class="max-w-xl text-base leading-relaxed text-ink/65 lg:justify-self-end">
 					Know before you pay.
