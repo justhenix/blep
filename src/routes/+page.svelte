@@ -856,16 +856,48 @@
 	</section>
 
 	<!-- ═══════════════ AGENT BROADCAST TICKER ═══════════════ -->
-	<div class="ticker-wrap" aria-hidden="true">
-		<div class="ticker-track">
-			<span class="ticker-content"
-				>blep sniffing seller cope / blep counting future regret / blep rejecting rgb traps / blep
-				tracking real user thermal complaints /&nbsp;</span
-			>
-			<span class="ticker-content"
-				>blep sniffing seller cope / blep counting future regret / blep rejecting rgb traps / blep
-				tracking real user thermal complaints /&nbsp;</span
-			>
+	<div class="ticker-wrap overflow-hidden whitespace-nowrap border-y-2 border-black py-4" aria-hidden="true">
+		<div class="ticker-track flex w-max">
+			<div class="ticker-content flex shrink-0 items-center font-display font-black uppercase tracking-widest text-ink">
+				<span class="mx-6">[PLACEHOLDER EXPRESSION THINKING]</span>
+				<span>BLEP SNIFFING SELLER COPE</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION JUDGING]</span>
+				<span>BLEP COUNTING FUTURE REGRET</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION ANNOYED]</span>
+				<span>BLEP REJECTING RGB TRAPS</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION SCANNING]</span>
+				<span>BLEP DETECTING BAD SPEC</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION READING]</span>
+				<span>BLEP SCANNING FORUM THOUGHTS</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION PROCESSING]</span>
+				<span>BLEP RETICULATING SPLINES</span>
+				<span class="mx-6">■</span>
+			</div>
+			<div class="ticker-content flex shrink-0 items-center font-display font-black uppercase tracking-widest text-ink">
+				<span class="mx-6">[PLACEHOLDER EXPRESSION THINKING]</span>
+				<span>BLEP SNIFFING SELLER COPE</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION JUDGING]</span>
+				<span>BLEP COUNTING FUTURE REGRET</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION ANNOYED]</span>
+				<span>BLEP REJECTING RGB TRAPS</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION SCANNING]</span>
+				<span>BLEP DETECTING BAD SPEC</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION READING]</span>
+				<span>BLEP SCANNING FORUM THOUGHTS</span>
+				<span class="mx-6">■</span>
+				<span class="mx-6">[PLACEHOLDER EXPRESSION PROCESSING]</span>
+				<span>BLEP RETICULATING SPLINES</span>
+				<span class="mx-6">■</span>
+			</div>
 		</div>
 	</div>
 
@@ -1346,26 +1378,8 @@
 	}
 
 	/* ── Agent Broadcast Ticker ── */
-	.ticker-wrap {
-		overflow: hidden;
-		border-top: 1px solid rgba(17, 17, 17, 0.2);
-		border-bottom: 1px solid rgba(17, 17, 17, 0.2);
-		padding: 0.85rem 0;
-		white-space: nowrap;
-	}
-
 	.ticker-track {
-		display: inline-flex;
-		animation: ticker-scroll 32s linear infinite;
-	}
-
-	.ticker-content {
-		font-family: var(--font-display);
-		font-weight: 700;
-		font-size: 0.875rem;
-		letter-spacing: 0.01em;
-		color: var(--color-ink);
-		flex-shrink: 0;
+		animation: ticker-scroll 90s linear infinite;
 	}
 
 	/* ── How It Works Timeline ── */
