@@ -1,11 +1,92 @@
 @import 'tailwindcss';
 
+@font-face {
+	font-family: 'Montserrat';
+	src: url('/fonts/montserrat-600.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Montserrat';
+	src: url('/fonts/montserrat-700.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Montserrat';
+	src: url('/fonts/montserrat-800.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 800;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Nunito';
+	src: url('/fonts/nunito-400.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Nunito';
+	src: url('/fonts/nunito-500.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Nunito';
+	src: url('/fonts/nunito-600.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'Nunito';
+	src: url('/fonts/nunito-700.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'IBM Plex Mono';
+	src: url('/fonts/ibm-plex-mono-600.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: 'IBM Plex Mono';
+	src: url('/fonts/ibm-plex-mono-700.ttf') format('truetype');
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+}
+
+:root {
+	--font-display: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+	--font-body: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
 @theme {
-	--font-sans: "Aptos", "Segoe UI", Helvetica, Arial, sans-serif;
-	--font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	--font-display: var(--font-display);
+	--font-body: var(--font-body);
+	--font-sans: var(--font-body);
+	--font-mono: var(--font-mono);
 	--color-paper: #fbfaf6;
 	--color-paper-dark: #f1eee7;
 	--color-ink: #111111;
+	--color-mint: #3dffc2;
 }
 
 html {
@@ -18,7 +99,8 @@ body {
 	margin: 0;
 	min-width: 320px;
 	overflow-x: hidden;
-	font-family: var(--font-sans);
+	font-family: var(--font-body);
+	line-height: 1.55;
 }
 
 button,

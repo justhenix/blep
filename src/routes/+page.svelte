@@ -1,68 +1,64 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { resolve } from '$app/paths';
+	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { spring } from 'svelte/motion';
 	import { fade } from 'svelte/transition';
 
-	type DemoPhase = 'idle' | 'running' | 'done';
-
-	const demoLogs = [
-		'[blep checking specs...]',
-		'[blep scanning forum complaints...]',
-		'[blep checking repairability...]',
-		'[blep comparing price to regret...]',
-		'[blep preparing verdict...]'
-	];
-
-	const steps = [
+	const timelineData = [
 		{
-			title: 'Paste',
-			text: 'Drop in a used listing.'
+			title: 'Capture',
+			body: 'Paste messy listing text. BLEP strips the seller fog.'
 		},
 		{
-			title: 'Check',
-			text: 'Specs, reviews, complaints, repairability.'
+			title: 'Dissect',
+			body: 'It checks component age, heat, repair traps, and real complaints.'
 		},
 		{
-			title: 'Decide',
-			text: 'Approved. Caution. Waste.'
+			title: 'Sentence',
+			body: 'You get APPROVED, CAUTION, or WASTE. No polite fog.'
+		},
+		{
+			title: 'Press X for Doubt',
+			body: 'Still coping? Ask follow-up. BLEP explains why the deal stinks.'
 		}
 	];
 
-	const reasons = [
+	const traps = [
 		{
-			title: 'Save money',
-			text: 'Cheap can still be expensive.'
+			title: 'The Fake New Trap',
+			body: 'Old parts in a sealed box are still old. BLEP checks hardware age before you buy a slow paperweight.'
 		},
 		{
-			title: 'Avoid landfill tech',
-			text: 'Some devices are already done.'
+			title: 'The Permanent Slowdown',
+			body: 'Soldered memory means zero upgrade path. Cute today, painful later.'
 		},
 		{
-			title: 'Read between specs',
-			text: 'Listings hide the bad parts.'
+			title: 'The Finger Burner',
+			body: 'Great specs mean nothing if the chassis hits 95\u00b0C and throttles itself into sadness.'
 		}
 	];
-
-	let listing = $state('Used ThinkPad T480, i5, 8GB RAM, 256GB SSD, $180');
-	let demoPhase = $state<DemoPhase>('idle');
-	let visibleLogs = $state<string[]>([]);
-	let logTimer: ReturnType<typeof setTimeout> | undefined;
 
 	let windowWidth = $state(1024);
 	let windowHeight = $state(768);
 	let isSquinting = $state(false);
 	let isIdle = $state(false);
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
+	let activeStep = $state(0);
+	let stepEls: HTMLElement[] = [];
+	let spineEl = $state<HTMLElement | null>(null);
+	let indicatorEl = $state<HTMLElement | null>(null);
 
-	const eyeOffset = spring({ x: 0, y: 0 }, {
-		stiffness: 0.06,
-		damping: 0.7
-	});
+	const eyeOffset = spring(
+		{ x: 0, y: 0 },
+		{
+			stiffness: 0.06,
+			damping: 0.7
+		}
+	);
 
 	const handleMouseMove = (e: MouseEvent) => {
 		// x is inverted because the parent <g> has scale(-1, 1)
-		const rx = (e.clientX / windowWidth - 0.5) * -70; 
+		const rx = (e.clientX / windowWidth - 0.5) * -70;
 		const ry = (e.clientY / windowHeight - 0.5) * 70;
 		eyeOffset.set({ x: rx, y: ry });
 	};
@@ -85,102 +81,151 @@
 
 	$effect(() => {
 		resetIdleTimer();
-		
+
 		const handleActivity = () => resetIdleTimer();
 		const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
-		events.forEach(e => window.addEventListener(e, handleActivity));
-		
+		events.forEach((e) => window.addEventListener(e, handleActivity));
+
 		return () => {
 			if (idleTimer) clearTimeout(idleTimer);
-			events.forEach(e => window.removeEventListener(e, handleActivity));
+			events.forEach((e) => window.removeEventListener(e, handleActivity));
 		};
 	});
 
-	const verdictReady = $derived(demoPhase === 'done');
+	// Timeline scroll observer — track which step is closest to viewport center
+	onMount(() => {
+		if (typeof IntersectionObserver === 'undefined') return;
 
-	const clearDemoTimer = () => {
-		if (!logTimer) return;
-		clearTimeout(logTimer);
-		logTimer = undefined;
-	};
+		const visible = new SvelteSet<number>();
 
-	const showLog = (index: number, delay: number) => {
-		logTimer = setTimeout(() => {
-			visibleLogs = [...visibleLogs, demoLogs[index]];
-
-			if (index === demoLogs.length - 1) {
-				demoPhase = 'done';
-				return;
+		const pickClosest = () => {
+			if (visible.size === 0) return;
+			const mid = window.innerHeight / 2;
+			let best = activeStep;
+			let bestDist = Infinity;
+			for (const idx of visible) {
+				const el = stepEls[idx];
+				if (!el) continue;
+				const rect = el.getBoundingClientRect();
+				const center = rect.top + rect.height / 2;
+				const dist = Math.abs(center - mid);
+				if (dist < bestDist) {
+					bestDist = dist;
+					best = idx;
+				}
 			}
+			activeStep = best;
+		};
 
-			showLog(index + 1, delay);
-		}, delay);
-	};
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					const idx = stepEls.indexOf(entry.target as HTMLElement);
+					if (idx === -1) continue;
+					if (entry.isIntersecting) visible.add(idx);
+					else visible.delete(idx);
+				}
+				pickClosest();
+			},
+			{ rootMargin: '-40% 0px -40% 0px' }
+		);
 
-	const runDemo = () => {
-		if (demoPhase === 'running' || !listing.trim()) return;
+		for (const el of stepEls) observer.observe(el);
 
-		clearDemoTimer();
-		visibleLogs = [];
-		demoPhase = 'running';
+		// Dynamic active indicator top calculation
+		const updateIndicatorPosition = () => {
+			if (!spineEl || stepEls.length === 0) return;
+			const firstStep = stepEls[0];
+			const lastStep = stepEls[stepEls.length - 1];
+			if (!firstStep || !lastStep) return;
 
-		const prefersReducedMotion =
-			typeof window !== 'undefined' &&
-			window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			const spineRect = spineEl.getBoundingClientRect();
+			const spineTop = spineRect.top + window.scrollY;
 
-		showLog(0, prefersReducedMotion ? 40 : 430);
-	};
+			// We calculate the Y positions of the vertical center of the first and last cards
+			const firstStepRect = firstStep.getBoundingClientRect();
+			const lastStepRect = lastStep.getBoundingClientRect();
 
-	onDestroy(clearDemoTimer);
+			const yStart = firstStepRect.top + firstStepRect.height / 2 + window.scrollY - spineTop;
+			const yEnd = lastStepRect.top + lastStepRect.height / 2 + window.scrollY - spineTop;
+
+			// The indicator follows the exact center of the viewport
+			const viewportCenter = window.scrollY + window.innerHeight / 2;
+			const centerRelativeToSpine = viewportCenter - spineTop;
+
+			// Clamp it between the first and last step centers
+			const targetY = Math.max(yStart, Math.min(centerRelativeToSpine, yEnd));
+
+			if (indicatorEl) {
+				indicatorEl.style.top = `${targetY}px`;
+			}
+		};
+
+		const handleScroll = () => {
+			requestAnimationFrame(updateIndicatorPosition);
+		};
+
+		window.addEventListener('scroll', handleScroll, { passive: true });
+		window.addEventListener('resize', handleScroll, { passive: true });
+
+		// Trigger initial calculations after a short delay so layout resolves
+		const initialTimeout = setTimeout(updateIndicatorPosition, 100);
+
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('scroll', handleScroll);
+			window.removeEventListener('resize', handleScroll);
+			clearTimeout(initialTimeout);
+		};
+	});
 </script>
 
 <svelte:head>
-	<title>BLEP | Tiny hardware judge</title>
+	<title>BLEP</title>
 	<meta
 		name="description"
-		content="Paste a used laptop listing. BLEP checks the evidence and tells you if it is worth it."
+		content="Paste a listing or ask what to buy. BLEP judges hardware deals against live market reality."
 	/>
 </svelte:head>
 
-<svelte:window bind:innerWidth={windowWidth} bind:innerHeight={windowHeight} onmousemove={handleMouseMove} />
+<svelte:window
+	bind:innerWidth={windowWidth}
+	bind:innerHeight={windowHeight}
+	onmousemove={handleMouseMove}
+/>
 
-<main class="min-h-screen overflow-x-hidden bg-paper text-ink selection:bg-ink selection:text-paper">
-	<header class="sticky top-0 z-50 border-b border-ink/15 bg-paper/95 backdrop-blur" aria-label="Site header">
-		<nav class="mx-auto flex w-full max-w-300 items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8" aria-label="Main">
-			<a class="focus-visible-ring shrink-0 flex items-center" href="#top" aria-label="BLEP home">
-				<img class="h-10 w-auto sm:h-12" src="/logo-full-main.svg" alt="BLEP" />
-			</a>
-
-			<div class="hidden items-center gap-8 text-sm font-semibold text-ink/70 md:flex">
-				<a class="nav-link" href="#how">How it works</a>
-				<a class="nav-link" href="#demo">Demo</a>
-				<a class="nav-link" href="#why">Why BLEP</a>
-			</div>
-
-			<a class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 text-sm font-bold text-white transition hover:bg-white hover:text-ink" href="#demo">
-				Ask BLEP
-			</a>
-		</nav>
-	</header>
-
-	<section id="top" class="flex flex-col justify-center min-h-[calc(100svh-4rem)] overflow-hidden border-b border-ink/15 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-		<div class="mx-auto grid w-full max-w-300 min-w-0 gap-7 lg:grid-cols-[0.45fr_0.55fr] lg:items-center">
+<main class="flex-grow">
+	<!-- ═══════════════ HERO ═══════════════ -->
+	<section
+		id="top"
+		class="flex min-h-[calc(100svh-4rem)] flex-col justify-center overflow-hidden border-b border-ink/15 px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
+	>
+		<div
+			class="mx-auto grid w-full max-w-300 min-w-0 gap-7 lg:grid-cols-[0.45fr_0.55fr] lg:items-center"
+		>
 			<div class="relative z-10 max-w-xl min-w-0">
-				<h1 class="hero-headline max-w-xl text-balance font-bold leading-[0.94]">
-					Buy less junk.
-				</h1>
+				<h1 class="hero-headline max-w-xl font-display text-balance">Buy less junk.</h1>
 				<div class="mt-5 h-px w-full max-w-xs bg-ink/35"></div>
-				<p class="mt-6 max-w-md text-lg leading-relaxed text-ink/70 sm:text-xl">
-					Paste the listing. BLEP tells you if it&apos;s worth it.
+				<p class="hero-copy mt-6 max-w-md text-lg text-ink/70 sm:text-xl">
+					Sellers overhype basic toasters. Paste a listing or ask what to buy. BLEP tells you if
+					it&apos;s a steal, sketchy, or wallet poison.
 				</p>
-				<p class="mt-5 font-mono text-sm font-bold uppercase text-ink">Approved / Caution / Waste</p>
+				<p class="mt-5 font-mono text-sm font-bold text-ink uppercase">
+					Approved / Caution / Waste
+				</p>
 
 				<div class="mt-8 flex flex-wrap items-center gap-3">
-					<a class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 text-sm font-bold text-white transition hover:bg-white hover:text-ink" href="#demo">
-						Judge my listing
+					<a
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+						href="#demo"
+					>
+						Ask BLEP
 					</a>
-					<a class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 text-sm font-bold text-ink transition hover:border-ink" href="#verdict">
-						See demo verdict
+					<a
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
+						href="#demo"
+					>
+						Compare laptops
 					</a>
 				</div>
 			</div>
@@ -190,55 +235,126 @@
 				role="img"
 				aria-label="BLEP cube mascot inside constructivist hardware verdict poster"
 			>
-				<div class="absolute left-[24%] top-[19%] h-52 w-52 rounded-full border border-ink/25 bg-paper"></div>
-				<div class="absolute right-[10%] top-[18%] h-12 w-56 rotate-[-36deg] bg-paper-dark/80"></div>
-				<div class="absolute left-[12%] top-[18%] h-28 w-48 border border-ink/20"></div>
-				<div class="absolute left-[25%] top-[51%] h-px w-[65%] rotate-[-18deg] bg-ink/30"></div>
-				<div class="absolute right-[12%] top-[28%] h-px w-[42%] rotate-[-36deg] bg-ink/35"></div>
-				<div class="plus-mark left-[12%] top-[31%]"></div>
-				<div class="plus-mark bottom-[15%] right-[10%]"></div>
-				<span class="absolute right-[6%] top-[55%] border border-ink/80 bg-paper px-3 py-1 font-mono text-xs font-bold uppercase text-ink">
+				<div
+					class="absolute top-[19%] left-[24%] h-52 w-52 rounded-full border border-ink/25 bg-paper"
+				></div>
+				<div
+					class="absolute top-[18%] right-[10%] h-12 w-56 rotate-[-36deg] bg-paper-dark/80"
+				></div>
+				<div class="absolute top-[18%] left-[12%] h-28 w-48 border border-ink/20"></div>
+				<div class="absolute top-[51%] left-[25%] h-px w-[65%] rotate-[-18deg] bg-ink/30"></div>
+				<div class="absolute top-[28%] right-[12%] h-px w-[42%] rotate-[-36deg] bg-ink/35"></div>
+				<div class="plus-mark top-[31%] left-[12%]"></div>
+				<div class="plus-mark right-[10%] bottom-[15%]"></div>
+				<span
+					class="absolute top-[55%] right-[6%] border border-ink/80 bg-paper px-3 py-1 font-mono text-xs font-bold text-ink uppercase"
+				>
 					worth check
 				</span>
-				<p class="absolute bottom-[8%] left-[9%] max-w-48 font-mono text-[10px] font-bold uppercase leading-relaxed text-ink/55">
+				<p
+					class="absolute bottom-[8%] left-[9%] max-w-48 font-mono text-[10px] leading-relaxed font-bold text-ink/55 uppercase"
+				>
 					Specs. Repairability. Complaints. Price.
 				</p>
 
-				<div class="absolute inset-0 z-10 mx-auto flex items-center justify-center" aria-hidden="true">
+				<div
+					class="absolute inset-0 z-10 mx-auto flex items-center justify-center"
+					aria-hidden="true"
+				>
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<svg class="mascot-cube w-[66%] max-w-82.5 sm:w-[58%] lg:max-w-87.5 cursor-pointer" viewBox="0 0 862.31 902.94" onclick={handleMascotClick} role="img" aria-label="BLEP mascot">
+					<svg
+						class="mascot-cube w-[66%] max-w-82.5 cursor-pointer sm:w-[58%] lg:max-w-87.5"
+						viewBox="0 0 862.31 902.94"
+						onclick={handleMascotClick}
+						role="img"
+						aria-label="BLEP mascot"
+					>
 						<g transform="scale(-1, 1) translate(-862.31, 0)">
-							<polygon class="cube-line" points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28" />
+							<polygon
+								class="cube-line"
+								points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28"
+							/>
 							<line class="cube-line" x1="33.36" y1="297.37" x2="201.17" y2="357.78" />
-							<g style="transform: translate({$eyeOffset.x}px, {$eyeOffset.y}px);">
+							<g
+								class="blep-eye-track"
+								style="transform: translate({isIdle ? 0 : $eyeOffset.x}px, {isIdle
+									? 0
+									: $eyeOffset.y}px);"
+							>
 								<!-- Squinting eyes (crossfade) -->
-								<g class="transition-opacity duration-200 {isSquinting ? 'opacity-100' : 'opacity-0'}">
+								<g
+									class="transition-opacity duration-200 {isSquinting
+										? 'opacity-100'
+										: 'opacity-0'}"
+								>
 									<!-- Visually left eye -->
-									<polyline points="716.42,445.28 656.5,496 719.45,519.14" fill="none" stroke="#111111" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter" />
+									<polyline
+										points="716.42,445.28 656.5,496 719.45,519.14"
+										fill="none"
+										stroke="#111111"
+										stroke-width="22"
+										stroke-linecap="butt"
+										stroke-linejoin="miter"
+									/>
 									<!-- Visually right eye -->
-									<polyline points="528.12,487.6 591,510.55 531.14,561.46" fill="none" stroke="#111111" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter" />
+									<polyline
+										points="528.12,487.6 591,510.55 531.14,561.46"
+										fill="none"
+										stroke="#111111"
+										stroke-width="22"
+										stroke-linecap="butt"
+										stroke-linejoin="miter"
+									/>
 								</g>
-								
+
 								<!-- Normal / Sleep eyes -->
-								<g class="transition-opacity duration-200 {isSquinting ? 'opacity-0' : 'opacity-100'}">
-									<polygon class="mascot-eye {isIdle ? 'sleepy' : ''}" points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14" />
-									<polygon class="mascot-eye {isIdle ? 'sleepy' : ''}" points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48" />
+								<g
+									class="transition-opacity duration-200 {isSquinting
+										? 'opacity-0'
+										: 'opacity-100'}"
+								>
+									<g class="blep-eyes blep-eyes--awake {isIdle ? 'is-hidden' : ''}">
+										<polygon
+											class="blep-eye mascot-eye"
+											points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14"
+										/>
+										<polygon
+											class="blep-eye mascot-eye"
+											points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48"
+										/>
+									</g>
+									<g class="blep-eyes blep-eyes--sleep {isIdle ? '' : 'is-hidden'}">
+										<line class="blep-eye blep-eye--lid" x1="713" y1="486" x2="661" y2="498" />
+										<line class="blep-eye blep-eye--lid" x1="586" y1="514" x2="534" y2="526" />
+									</g>
 								</g>
 							</g>
 						</g>
 					</svg>
 				</div>
 				{#if isIdle}
-					<div class="absolute inset-0 z-20 pointer-events-none mx-auto flex items-center justify-center" aria-hidden="true" transition:fade={{ duration: 400 }}>
-						<div class="relative w-[66%] max-w-82.5 aspect-square sm:w-[58%] lg:max-w-87.5">
-							<p class="eepy-pulse absolute left-[-15%] top-[15%] font-mono text-xs font-bold text-ink/40 sm:left-[-10%]">
+					<div
+						class="pointer-events-none absolute inset-0 z-20 mx-auto flex items-center justify-center"
+						aria-hidden="true"
+						transition:fade={{ duration: 400 }}
+					>
+						<div class="relative aspect-square w-[66%] max-w-82.5 sm:w-[58%] lg:max-w-87.5">
+							<p
+								class="eepy-pulse absolute top-[15%] left-[-15%] font-mono text-xs font-bold text-ink/40 sm:left-[-10%]"
+							>
 								(eepy...)
 							</p>
-							<div class="absolute right-[10%] top-[5%] h-24 w-16 font-mono font-bold text-ink/40">
+							<div class="absolute top-[5%] right-[10%] h-24 w-16 font-mono font-bold text-ink/40">
 								<span class="z-float absolute bottom-0 left-0 text-xl">z</span>
-								<span class="z-float absolute bottom-4 left-4 text-2xl" style="animation-delay: 1.2s;">z</span>
-								<span class="z-float absolute bottom-9 left-8 text-3xl" style="animation-delay: 2.4s;">z</span>
+								<span
+									class="z-float absolute bottom-4 left-4 text-2xl"
+									style="animation-delay: 1.2s;">z</span
+								>
+								<span
+									class="z-float absolute bottom-9 left-8 text-3xl"
+									style="animation-delay: 2.4s;">z</span
+								>
 							</div>
 						</div>
 					</div>
@@ -247,231 +363,86 @@
 		</div>
 	</section>
 
-	<section id="demo" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-		<div class="mx-auto w-full max-w-300 min-w-0">
-			<div class="mb-8 flex flex-col justify-between gap-4 border-b border-ink/20 pb-5 md:flex-row md:items-end">
-				<div>
-					<h2 class="mt-2 text-4xl font-bold sm:text-5xl">Try the judge</h2>
-				</div>
-				<p class="max-w-md text-base leading-relaxed text-ink/65">
-					Paste a listing. Get a verdict.
-				</p>
-			</div>
-
-			<div class="lab-card grid w-full min-w-0 gap-0 overflow-hidden border border-ink bg-white lg:grid-cols-[0.88fr_1.12fr]">
-				<form class="grid gap-5 border-b border-ink/20 bg-paper p-5 sm:p-7 lg:border-b-0 lg:border-r" onsubmit={(event) => event.preventDefault()}>
-					<div class="flex flex-wrap items-center justify-between gap-3">
-						<label class="font-mono text-xs font-bold uppercase text-ink/70" for="listing">
-							Listing input
-						</label>
-						<span class="border border-ink bg-white px-3 py-1 font-mono text-xs font-bold uppercase">
-							Brain Juice 1/2
-						</span>
-					</div>
-
-					<textarea
-						id="listing"
-						class="focus-visible-ring min-h-40 w-full resize-none border border-ink bg-white p-4 text-base leading-relaxed outline-none"
-						bind:value={listing}
-						placeholder="Paste listing, device name, or spec sheet."
-					></textarea>
-
-					<button
-						class="focus-visible-ring inline-flex min-h-12 items-center justify-center border border-ink bg-ink px-5 text-sm font-bold text-white transition hover:bg-white hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-						type="button"
-						onclick={runDemo}
-						disabled={demoPhase === 'running' || !listing.trim()}
-					>
-						{demoPhase === 'running' ? 'Judging...' : 'Judge this listing'}
-					</button>
-
-					<div class="grid grid-cols-3 border border-ink/20 bg-white text-center font-mono text-xs font-bold uppercase text-ink/70">
-						<span class="border-r border-ink/20 px-2 py-3">Specs</span>
-						<span class="border-r border-ink/20 px-2 py-3">Forums</span>
-						<span class="px-2 py-3">Repair</span>
-					</div>
-				</form>
-
-				<div id="verdict" class="min-h-105 min-w-0 bg-white p-5 sm:p-7">
-					{#if demoPhase === 'idle'}
-						<div class="grid h-full min-h-90 place-items-center border border-dashed border-ink/35 bg-paper">
-							<div class="max-w-sm px-6 text-center">
-								<p class="font-mono text-xs font-bold uppercase text-ink/55">Mock judge</p>
-								<h3 class="mt-3 text-3xl font-bold">Verdict waits here.</h3>
-								<p class="mt-3 text-sm leading-relaxed text-ink/65">
-									Fixed data. No backend call.
-								</p>
-							</div>
-						</div>
-					{:else if demoPhase === 'running'}
-						<div class="grid min-h-90 border border-ink bg-paper p-5">
-							<div>
-								<div class="mb-5 flex items-center justify-between border-b border-ink/20 pb-3">
-									<p class="font-mono text-xs font-bold uppercase text-ink/60">BLEP inspection log</p>
-									<p class="log-pulse font-mono text-xs font-bold uppercase text-ink">Analyzing</p>
-								</div>
-								<div class="space-y-3 font-mono text-sm font-bold text-ink">
-									{#each visibleLogs as log (log)}
-										<p class="log-line">{log}</p>
-									{/each}
-								</div>
-							</div>
-						</div>
-					{:else if verdictReady}
-						<article class="verdict-card border border-ink bg-paper p-5 sm:p-6" aria-label="Demo verdict">
-							<div class="flex flex-wrap items-start justify-between gap-4 border-b border-ink pb-5">
-								<div>
-									<p class="font-mono text-xs font-bold uppercase text-ink/60">Product</p>
-									<h3 class="mt-1 text-3xl font-bold">ThinkPad T480</h3>
-								</div>
-								<p class="stamp -rotate-3 border border-ink px-5 py-2 font-bold uppercase">
-									APPROVED
-								</p>
-							</div>
-
-							<div class="mt-5 grid gap-3 sm:grid-cols-3">
-								<div class="spec-chip">
-									<span>Landfill year</span>
-									<strong>2031</strong>
-								</div>
-								<div class="spec-chip">
-									<span>Upgradeable</span>
-									<strong>Yes</strong>
-								</div>
-								<div class="spec-chip">
-									<span>Forum score</span>
-									<strong>8/10</strong>
-								</div>
-							</div>
-
-							<div class="mt-5 grid gap-3 md:grid-cols-2">
-								<section class="detail-block">
-									<h4>Fatal flaw</h4>
-									<p>Battery health is the gamble. Check cycle count before paying.</p>
-								</section>
-								<section class="detail-block">
-									<h4>Thermal</h4>
-									<p>Manageable if cleaned.</p>
-								</section>
-							</div>
-
-							<blockquote class="mt-5 border-l-4 border-ink bg-white p-4 text-base font-bold leading-relaxed">
-								Old, square, and somehow still less embarrassing than a shiny sealed laptop with soldered regret.
-							</blockquote>
-
-							<p class="mt-5 border-t border-ink/20 pt-5 text-base leading-relaxed text-ink/75">
-								<strong class="text-ink">Summary:</strong> Repairable, affordable, and still useful at the right price.
-							</p>
-						</article>
-					{/if}
-				</div>
-			</div>
-		</div>
-	</section>
-
 	<section id="how" class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
-			<div class="mb-10 max-w-2xl">
-				<p class="font-mono text-xs font-bold uppercase text-ink/60">Flow</p>
-				<h2 class="mt-2 text-4xl font-bold sm:text-5xl">How it works</h2>
+			<div class="mb-16 text-center">
+				<h2 class="font-display text-4xl font-bold sm:text-5xl">How it works</h2>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-3">
-				{#each steps as step, index (step.title)}
-					<article class="construct-card relative min-h-64 border border-ink bg-white p-5">
-						<div class="mb-8 flex items-center justify-between">
-							<span class="font-mono text-xs font-bold uppercase text-ink/55">0{index + 1}</span>
-							<svg class="h-8 w-16 text-ink" viewBox="0 0 64 32" aria-hidden="true">
-								<path d="M4 16h50M44 7l10 9-10 9" fill="none" stroke="currentColor" stroke-width="2" />
-							</svg>
+			<div class="timeline-spine" bind:this={spineEl}>
+				<!-- Dynamic active scroll indicator node -->
+				<div
+					bind:this={indicatorEl}
+					class="pointer-events-none absolute left-2 z-10
+						h-3 w-3 -translate-x-1/2 -translate-y-1/2
+						bg-ink transition-[top] duration-300 ease-out
+						md:left-1/2 md:h-4 md:w-4"
+				></div>
+
+				{#each timelineData as step, i (step.title)}
+					<div class="timeline-step" bind:this={stepEls[i]}>
+						<div
+							class="h-4.5 w-4.5 shrink-0"
+							style="grid-column:2; grid-row:1; justify-self:center; align-self:start; margin-top:2.25rem; z-index:1;"
+						></div>
+						<div
+							class="bg-white p-8 transition-all duration-300 md:p-12
+								{activeStep === i ? 'border border-ink opacity-100' : 'border border-ink/10 opacity-40'}"
+							style={i % 2 === 0
+								? 'grid-column:1; grid-row:1; text-align:right;'
+								: 'grid-column:3; grid-row:1;'}
+						>
+							<span class="mb-2 block font-body text-sm font-bold text-ink/45">0{i + 1}</span>
+							<h3 class="font-display text-2xl leading-tight font-bold sm:text-3xl">
+								{step.title}
+							</h3>
+							<p class="mt-3 text-base leading-relaxed font-medium text-ink/65">{step.body}</p>
 						</div>
-						{#if index === 0}
-							<!-- Paste SVG (lucide-clipboard) -->
-							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-ink mb-5" aria-hidden="true">
-								<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
-								<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-							</svg>
-						{:else if index === 1}
-							<!-- Check SVG (lucide-search) -->
-							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-ink mb-5" aria-hidden="true">
-								<circle cx="11" cy="11" r="8"/>
-								<path d="m21 21-4.3-4.3"/>
-							</svg>
-						{:else}
-							<!-- Decide SVG (lucide-check-circle) -->
-							<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-ink mb-5" aria-hidden="true">
-								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-								<path d="m22 4-10 10.01-3-3"/>
-							</svg>
-						{/if}
-						<h3 class="text-2xl font-bold">{step.title}</h3>
-						<p class="mt-3 text-sm leading-relaxed text-ink/65">{step.text}</p>
-					</article>
+					</div>
 				{/each}
 			</div>
 		</div>
 	</section>
 
+	<!-- ═══════════════ TRAP DETECTOR ═══════════════ -->
 	<section id="why" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-10 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
 				<div>
-					<p class="font-mono text-xs font-bold uppercase text-ink/60">Why BLEP matters</p>
-					<h2 class="mt-2 text-4xl font-bold sm:text-5xl">Cheap can still be expensive.</h2>
+					<h2 class="font-display text-4xl font-bold sm:text-5xl">Cheap can still be expensive.</h2>
 				</div>
-				<p class="max-w-xl text-base leading-relaxed text-ink/65 lg:justify-self-end">Know before you pay.</p>
+				<p class="max-w-xl text-base leading-relaxed text-ink/65 lg:justify-self-end">
+					Know before you pay.
+				</p>
 			</div>
 
-			<div class="grid gap-4 md:grid-cols-3">
-				{#each reasons as reason (reason.title)}
-					<article class="reason-card border border-ink/35 bg-white p-5">
-						<div class="mb-6 h-12 w-12 border border-ink bg-paper">
-							<div class="h-full w-full translate-x-2 translate-y-2 border border-ink bg-white"></div>
-						</div>
-						<h3 class="text-2xl font-bold">{reason.title}</h3>
-						<p class="mt-3 text-sm leading-relaxed text-ink/65">{reason.text}</p>
-					</article>
-				{/each}
-			</div>
+			{#each traps as trap, i (trap.title)}
+				<article class="trap-row">
+					<span class="trap-num">0{i + 1}</span>
+					<div class="min-w-0">
+						<h3 class="trap-heading">{trap.title}</h3>
+						<p class="trap-body">{trap.body}</p>
+					</div>
+				</article>
+			{/each}
 		</div>
 	</section>
-
-	<footer class="border-t border-ink/20 bg-paper px-4 py-10 sm:px-6 lg:px-8">
-		<div class="mx-auto flex w-full max-w-300 flex-col gap-7 sm:flex-row sm:items-end sm:justify-between">
-			<div>
-				<img class="h-14 w-auto" src="/logo-full-main.svg" alt="BLEP" />
-				<p class="mt-4 max-w-sm text-sm font-bold text-ink/65">
-					Fast hardware verdicts before you spend.
-				</p>
-				<p class="mt-2 font-mono text-xs font-bold uppercase text-ink">
-					BLEP checks. You decide.
-				</p>
-			</div>
-			<nav class="flex flex-wrap gap-5 text-sm font-bold text-ink/65" aria-label="Footer">
-				<a class="nav-link" href="#top">Top</a>
-				<a class="nav-link" href={resolve('/privacy')}>Privacy</a>
-				<a class="nav-link" href={resolve('/terms')}>Terms</a>
-			</nav>
-		</div>
-	</footer>
 </main>
 
 <style>
-	.nav-link {
-		text-decoration: underline;
-		text-decoration-thickness: 1px;
-		text-underline-offset: 0.25rem;
-		text-decoration-color: transparent;
-	}
-
-	.nav-link:hover {
-		color: var(--color-ink);
-		text-decoration-color: currentColor;
-	}
-
+	/* ── Hero ── */
 	.hero-headline {
-		font-size: clamp(3.8rem, 8vw, 7.25rem);
+		font-family: var(--font-display);
+		font-size: clamp(3.8rem, 8vw, 7rem);
+		font-weight: 800;
+		line-height: 0.92;
 		letter-spacing: 0;
+	}
+
+	.hero-copy {
+		font-family: var(--font-body);
+		font-weight: 500;
+		line-height: 1.6;
 	}
 
 	.poster-stage {
@@ -510,6 +481,7 @@
 		height: 2px;
 	}
 
+	/* ── Mascot ── */
 	.mascot-cube {
 		filter: drop-shadow(8px 10px 0 rgba(17, 17, 17, 0.055));
 		animation: mascot-float 5.5s ease-in-out infinite;
@@ -524,43 +496,47 @@
 		stroke-width: 30;
 	}
 
+	.blep-eye-track,
+	.blep-eyes,
+	.blep-eye {
+		transform-box: fill-box;
+		transform-origin: center;
+	}
+
+	.blep-eye-track {
+		transition: transform 180ms ease-out;
+	}
+
+	.blep-eyes {
+		opacity: 1;
+		transition: opacity 200ms ease;
+	}
+
+	.blep-eyes.is-hidden {
+		opacity: 0;
+		pointer-events: none;
+	}
+
 	.mascot-eye {
 		fill: #111111;
 		stroke: #111111;
 		stroke-linejoin: miter;
 		stroke-miterlimit: 10;
 		stroke-width: 8;
-		transform-box: fill-box;
-		transform-origin: center;
 		animation: blink 6s infinite;
-		transition: transform 300ms ease-in-out;
+		transition: transform 200ms ease;
 	}
 
-	.mascot-eye.sleepy {
-		animation: none;
-		transform: scaleY(0.12);
+	.blep-eyes--sleep {
+		transition-duration: 220ms;
 	}
 
-	.lab-card {
-		box-shadow: 8px 8px 0 rgba(17, 17, 17, 0.045);
-	}
-
-	.log-line {
-		animation: log-in 180ms ease-out both;
-	}
-
-	.log-line::before {
-		content: '';
-		display: inline-block;
-		width: 0.5rem;
-		height: 0.5rem;
-		margin-right: 0.65rem;
-		border: 1px solid #111111;
-		background: #ffffff;
-	}
-
-	.log-pulse {
-		animation: pulse-text 900ms ease-in-out infinite;
+	.blep-eye--lid {
+		fill: none;
+		stroke: #111111;
+		stroke-width: 18;
+		stroke-linecap: butt;
+		stroke-linejoin: miter;
 	}
 
 	.eepy-pulse {
@@ -572,55 +548,70 @@
 		animation: float-z 3.6s ease-in infinite;
 	}
 
-	.stamp {
-		box-shadow: 3px 3px 0 #111111;
+	/* ── How It Works Timeline ── */
+	.timeline-spine {
+		position: relative;
+		max-width: 56rem;
+		margin: 0 auto;
 	}
 
-	.spec-chip,
-	.detail-block {
-		border: 1px solid rgba(17, 17, 17, 0.35);
-		background: #ffffff;
-		padding: 1rem;
+	.timeline-spine::before {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 0;
+		bottom: 0;
+		border-left: 2px dotted rgba(17, 17, 17, 0.25);
+		transform: translateX(-50%);
 	}
 
-	.spec-chip span,
-	.detail-block h4 {
-		display: block;
-		font-family: var(--font-mono);
+	.timeline-step {
+		position: relative;
+		display: grid;
+		grid-template-columns: 1fr 2.5rem 1fr;
+		align-items: start;
+		padding: 1.5rem 0;
+	}
+
+	/* ── Trap Detector ── */
+	.trap-row {
+		display: grid;
+		grid-template-columns: 3.5rem 1fr;
+		gap: 1.5rem;
+		align-items: start;
+		padding: 1.75rem 0;
+		border-top: 3px solid var(--color-ink);
+		transition: background-color 160ms ease;
+	}
+
+	.trap-row:hover {
+		background-color: var(--color-paper-dark);
+	}
+
+	.trap-num {
+		font-family: var(--font-body);
+		font-weight: 700;
 		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		color: rgba(17, 17, 17, 0.58);
+		color: rgba(17, 17, 17, 0.55);
+		padding-top: 0.35rem;
 	}
 
-	.spec-chip strong {
-		display: block;
-		margin-top: 0.25rem;
+	.trap-heading {
+		font-family: var(--font-display);
+		font-weight: 700;
 		font-size: 1.5rem;
-		line-height: 1;
+		line-height: 1.2;
 	}
 
-	.detail-block p {
-		margin-top: 0.4rem;
-		font-weight: 700;
-		line-height: 1.5;
+	.trap-body {
+		margin-top: 0.5rem;
+		font-family: var(--font-body);
+		font-weight: 500;
+		color: rgba(17, 17, 17, 0.65);
+		line-height: 1.6;
 	}
 
-	.construct-card,
-	.reason-card {
-		transition:
-			transform 160ms ease,
-			box-shadow 160ms ease;
-	}
-
-	.construct-card:hover,
-	.reason-card:hover {
-		transform: translate(-2px, -2px);
-		box-shadow: 6px 6px 0 rgba(17, 17, 17, 0.1);
-	}
-
-
-
+	/* ── Keyframes ── */
 	@keyframes mascot-float {
 		0%,
 		100% {
@@ -642,25 +633,9 @@
 		}
 	}
 
-	@keyframes log-in {
-		from {
-			opacity: 0;
-			transform: translateY(5px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	@keyframes pulse-text {
-		50% {
-			opacity: 0.45;
-		}
-	}
-
 	@keyframes eepy-pulse {
-		0%, 100% {
+		0%,
+		100% {
 			opacity: 0.8;
 		}
 		50% {
@@ -682,6 +657,32 @@
 		100% {
 			opacity: 0;
 			transform: translate(15px, -20px) scale(1.2);
+		}
+	}
+
+	/* ── Mobile ── */
+	@media (max-width: 768px) {
+		.timeline-spine::before {
+			left: 0.5rem;
+		}
+
+		.timeline-step {
+			grid-template-columns: 1.75rem 1fr;
+			padding: 1rem 0;
+		}
+
+		/* Mobile: force node col-1, card col-2, left-align for all steps */
+		.timeline-step > :first-child {
+			grid-column: 1 !important;
+			width: 0.875rem !important;
+			height: 0.875rem !important;
+			margin-top: 1.25rem !important;
+		}
+
+		.timeline-step > :last-child {
+			grid-column: 2 !important;
+			grid-row: 1 !important;
+			text-align: left !important;
 		}
 	}
 
@@ -727,6 +728,13 @@
 			animation-duration: 0.001ms !important;
 			animation-iteration-count: 1 !important;
 			transition-duration: 0.001ms !important;
+		}
+
+		.mascot-cube,
+		.mascot-eye,
+		.eepy-pulse,
+		.z-float {
+			animation: none !important;
 		}
 	}
 </style>

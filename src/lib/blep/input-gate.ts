@@ -108,17 +108,28 @@ const BUYING_INTENT_TERMS = [
 	'murah',
 	'bekas',
 	'bagus gak',
-	'worth buying'
+	'worth buying',
+	'rekomendasi',
+	'rekomen',
+	'mending',
+	'best',
+	'setup',
+	'trap',
+	'juta',
+	'jt'
 ] as const;
 
 const WORKLOAD_TERMS = [
 	'blender',
 	'gaming',
+	'gmaing',
 	'editing',
 	'render',
 	'coding',
 	'office',
-	'school'
+	'school',
+	'college',
+	'kuliah'
 ] as const;
 
 const SPEC_PATTERNS = [/\b\d{1,3}\s?(gb|tb)\b/i, /\bddr[2-5]\b/i, /\bnvme\b/i] as const;
@@ -399,6 +410,7 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 
 export function createDeclineVerdict(currentYear = new Date().getFullYear()): BlepVerdict {
 	return {
+		mode: 'VERDICT',
 		name: 'Not a hardware listing',
 		verdict: 'CAUTION',
 		landfill_year: currentYear,

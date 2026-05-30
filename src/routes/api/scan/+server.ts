@@ -5,16 +5,22 @@ import {
 	createDeclineVerdict,
 	type ScanInputGateResult
 } from '$lib/blep/input-gate';
-import { buildFallbackVerdict, buildMockVerdict } from '$lib/blep/mock';
+import { detectBlepIntent, type BlepIntentResult } from '$lib/blep/intent';
+import { buildFallbackVerdict, buildMockNeedsInput, buildMockOutput } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
-import type { BlepQuotaCheck, BlepScanResponse, BlepSource, BlepVerdict } from '$lib/blep/types';
+import type {
+	BlepPhase1Output,
+	BlepQuotaCheck,
+	BlepScanResponse,
+	BlepSource
+} from '$lib/blep/types';
 import { checkAndRecordAbuse } from '$lib/server/abuse';
 import { lookupCache, storeCache } from '$lib/server/cache';
 import { blepEnv } from '$lib/server/env';
 import { BlepApiError, blepError, safeParseJson, type BlepErrorCode } from '$lib/server/errors';
 import { collectSources } from '$lib/server/firecrawl';
 import { verifyBearerToken } from '$lib/server/firebase-admin';
-import { generateVerdict, getGeminiErrorCode } from '$lib/server/gemini';
+import { generatePhase1, getGeminiErrorCode } from '$lib/server/gemini';
 import { checkDailyQuota, consumeDailyQuota } from '$lib/server/quota';
 import { getRequestIdentity, type RequestIdentity } from '$lib/server/request-identity';
 
@@ -30,29 +36,38 @@ const mockQuota = (): BlepQuotaCheck => ({
 	limit: 999
 });
 
+const verdictCompat = (result: BlepPhase1Output) =>
+	result.mode === 'VERDICT' ? { verdict: result } : {};
+
 const buildFallbackResponse = (
 	error: BlepErrorCode,
 	quota: BlepQuotaCheck = defaultQuota(),
 	query = 'Unknown device',
 	sources: { title: string; url: string }[] = [],
 	retryAfterSeconds?: number
-): BlepScanResponse => ({
-	ok: false,
-	mode: 'fallback',
-	error,
-	quota: {
-		remaining: quota.remaining,
-		limit: quota.limit
-	},
-	sources,
-	verdict: buildFallbackVerdict(query),
-	...(typeof retryAfterSeconds === 'number' ? { retry_after_seconds: retryAfterSeconds } : {})
-});
+): BlepScanResponse => {
+	const result = buildFallbackVerdict(query);
+
+	return {
+		ok: false,
+		mode: 'fallback',
+		error,
+		quota: {
+			remaining: quota.remaining,
+			limit: quota.limit
+		},
+		intent: 'VERDICT_SCAN',
+		sources,
+		result,
+		...verdictCompat(result),
+		...(typeof retryAfterSeconds === 'number' ? { retry_after_seconds: retryAfterSeconds } : {})
+	};
+};
 
 const buildMockResponse = (
-	query: string,
-	urls: string[],
-	quota: BlepQuotaCheck
+	quota: BlepQuotaCheck,
+	intent: BlepIntentResult,
+	result: BlepPhase1Output
 ): BlepScanResponse => ({
 	ok: true,
 	mode: 'mock',
@@ -60,14 +75,17 @@ const buildMockResponse = (
 		remaining: quota.remaining,
 		limit: quota.limit
 	},
+	intent: intent.intent,
 	sources: [],
-	verdict: buildMockVerdict(query, urls)
+	result,
+	...verdictCompat(result)
 });
 
 const buildLiveResponse = (
 	quota: BlepQuotaCheck,
+	intent: BlepIntentResult,
 	sources: { title: string; url: string }[],
-	verdict: BlepVerdict,
+	result: BlepPhase1Output,
 	cached = false
 ): BlepScanResponse => ({
 	ok: true,
@@ -77,25 +95,53 @@ const buildLiveResponse = (
 		remaining: quota.remaining,
 		limit: quota.limit
 	},
+	intent: intent.intent,
 	sources,
-	verdict
+	result,
+	...verdictCompat(result)
 });
 
-const buildDeclinedResponse = (gate: ScanInputGateResult): BlepScanResponse => ({
-	ok: false,
-	mode: 'declined',
-	error: 'non_tech_input',
-	gate: {
-		reason: gate.reason,
-		confidence: gate.confidence
-	},
-	quota: {
-		remaining: 999,
-		limit: 999
-	},
-	sources: [],
-	verdict: createDeclineVerdict()
-});
+// NEEDS_INPUT short-circuits before any paid call. Outer mode mirrors env so the
+// demo badge stays honest, but no quota/Firecrawl/Gemini is touched.
+const buildNeedsInputResponse = (intent: BlepIntentResult): BlepScanResponse => {
+	const result = buildMockNeedsInput();
+	const quota = blepEnv.useMock ? mockQuota() : defaultQuota();
+
+	return {
+		ok: true,
+		mode: blepEnv.useMock ? 'mock' : 'live',
+		cached: false,
+		quota: {
+			remaining: quota.remaining,
+			limit: quota.limit
+		},
+		intent: intent.intent,
+		sources: [],
+		result
+	};
+};
+
+const buildDeclinedResponse = (gate: ScanInputGateResult): BlepScanResponse => {
+	const result = createDeclineVerdict();
+
+	return {
+		ok: false,
+		mode: 'declined',
+		error: 'non_tech_input',
+		gate: {
+			reason: gate.reason,
+			confidence: gate.confidence
+		},
+		quota: {
+			remaining: 999,
+			limit: 999
+		},
+		intent: 'VERDICT_SCAN',
+		sources: [],
+		result,
+		...verdictCompat(result)
+	};
+};
 
 const respond = <T>(body: T, init?: ResponseInit) => {
 	const mode =
@@ -181,18 +227,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (error instanceof BlepApiError) {
 			logApiErrorCode('request_error', error.code, error.status);
 
-			return respond(
-				buildApiErrorResponse(error.code),
-				{ status: error.status }
-			);
+			return respond(buildApiErrorResponse(error.code), { status: error.status });
 		}
 
 		logSafeError('json_error', error);
 
-		return respond(
-			buildApiErrorResponse('bad_json'),
-			{ status: 400 }
-		);
+		return respond(buildApiErrorResponse('bad_json'), { status: 400 });
 	}
 
 	const parsed = blepScanRequestSchema.safeParse(body);
@@ -201,10 +241,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const inputError = blepError('bad_input', 400);
 		logInputIssues(parsed.error.issues);
 
-		return respond(
-			buildApiErrorResponse(inputError.code),
-			{ status: 400 }
-		);
+		return respond(buildApiErrorResponse(inputError.code), { status: 400 });
 	}
 
 	const query = parsed.data.query;
@@ -219,6 +256,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		return respond(buildDeclinedResponse(gate));
 	}
 
+	const intent = detectBlepIntent(query, requestUrls);
+	console.info(`[blep intent] routed intent=${intent.intent}`);
+
+	// NEEDS_INPUT exits before any quota / Firecrawl / Gemini work.
+	if (intent.intent === 'NEEDS_INPUT') {
+		return respond(buildNeedsInputResponse(intent));
+	}
+
 	console.info('[blep api] scan started');
 	logEnvStatus();
 
@@ -226,8 +271,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Mock exits before external services.
 	if (blepEnv.useMock) {
-		console.info('[blep mock] returning mock verdict, no external calls');
-		return respond(buildMockResponse(query, requestUrls, mockQuota()));
+		console.info('[blep mock] returning mock output, no external calls');
+		const result = buildMockOutput(query, requestUrls, intent);
+
+		return respond(buildMockResponse(mockQuota(), intent, result));
 	}
 
 	// Paid path starts here.
@@ -241,10 +288,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		logSafeError('auth_error', error);
 		const authError = blepError('bad_auth', 401);
 
-		return respond(
-			buildApiErrorResponse(authError.code),
-			{ status: authError.status }
-		);
+		return respond(buildApiErrorResponse(authError.code), { status: authError.status });
 	}
 
 	try {
@@ -259,15 +303,22 @@ export const POST: RequestHandler = async ({ request }) => {
 			});
 		}
 
-		const cacheLookup = await lookupCache({ query, urls: requestUrls });
+		// Cache is verdict-only; recommendation/comparison skip it to keep cache schema stable.
+		const cacheable = intent.intent === 'VERDICT_SCAN';
 
-		if (cacheLookup.hit) {
-			console.info(`[blep cache] hit key=${cacheLookup.cacheKey.slice(0, 12)}...`);
+		if (cacheable) {
+			const cacheLookup = await lookupCache({ query, urls: requestUrls });
 
-			return respond(buildLiveResponse(quota, cacheLookup.sources, cacheLookup.verdict, true));
+			if (cacheLookup.hit) {
+				console.info(`[blep cache] hit key=${cacheLookup.cacheKey.slice(0, 12)}...`);
+
+				return respond(
+					buildLiveResponse(quota, intent, cacheLookup.sources, cacheLookup.verdict, true)
+				);
+			}
+
+			console.info(`[blep cache] miss key=${cacheLookup.cacheKey.slice(0, 12)}...`);
 		}
-
-		console.info(`[blep cache] miss key=${cacheLookup.cacheKey.slice(0, 12)}...`);
 
 		const abuse = await checkAndRecordAbuse(identity.identityHash);
 
@@ -286,9 +337,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			return respond(buildFallbackResponse(sourceResult.status, quota, query, sources));
 		}
 
-		let verdict: BlepVerdict;
+		let result: BlepPhase1Output;
 		try {
-			({ verdict } = await generateVerdict(query, sourceResult.sources));
+			({ result } = await generatePhase1(query, sourceResult.sources, intent));
 		} catch (error) {
 			return respond(buildFallbackResponse(getGeminiErrorCode(error), quota, query, sources));
 		}
@@ -302,9 +353,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			});
 		}
 
-		await storeCache({ query, urls: requestUrls }, verdict, sources);
+		if (cacheable && result.mode === 'VERDICT') {
+			await storeCache({ query, urls: requestUrls }, result, sources);
+		}
 
-		return respond(buildLiveResponse(quota, sources, verdict, false));
+		return respond(buildLiveResponse(quota, intent, sources, result, false));
 	} catch (error) {
 		logSafeError('live_error', error);
 		return respond(buildFallbackResponse('unknown', quota, query));
