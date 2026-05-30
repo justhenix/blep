@@ -10,7 +10,11 @@
 		class="mx-auto flex w-full max-w-300 items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8"
 		aria-label="Main"
 	>
-		<a class="focus-visible-ring flex shrink-0 items-center" href={page.route.id === '/' ? '#top' : '/#top'} aria-label="BLEP home">
+		<a
+			class="focus-visible-ring flex shrink-0 items-center"
+			href={page.route.id === '/' ? '#top' : '/#top'}
+			aria-label="BLEP home"
+		>
 			<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
 		</a>
 
