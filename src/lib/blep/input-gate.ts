@@ -78,7 +78,46 @@ const BRAND_TERMS = [
 	'gigabyte',
 	'apple',
 	'samsung',
-	'xiaomi'
+	'xiaomi',
+	// Product line / series names
+	'loq',
+	'legion',
+	'tuf',
+	'rog',
+	'vivobook',
+	'zenbook',
+	'nitro',
+	'predator',
+	'aspire',
+	'swift',
+	'spin',
+	'yoga',
+	'inspiron',
+	'latitude',
+	'xps',
+	'vostro',
+	'pavilion',
+	'envy',
+	'omen',
+	'spectre',
+	'raider',
+	'stealth',
+	'bravo',
+	'katana',
+	'modern',
+	'creator',
+	'surface',
+	'ipad',
+	'iphone',
+	'pixel',
+	'galaxy',
+	'redmi',
+	'poco',
+	'realme',
+	'oppo',
+	'vivo',
+	'infinix',
+	'advan'
 ] as const;
 
 const PLATFORM_TERMS = [
@@ -102,34 +141,93 @@ const BUYING_INTENT_TERMS = [
 	'worth it',
 	'used',
 	'secondhand',
+	'second',
 	'listing',
 	'buy',
 	'price',
 	'murah',
 	'bekas',
 	'bagus gak',
+	'bagus ga',
+	'bagus nggak',
 	'worth buying',
 	'rekomendasi',
 	'rekomen',
+	'recommend',
 	'mending',
 	'best',
 	'setup',
 	'trap',
 	'juta',
-	'jt'
+	'jutaan',
+	'jutain',
+	'jt',
+	'jeti',
+	'mil',
+	'cari',
+	'cariin',
+	'beli',
+	'buat',
+	'untuk',
+	'budget',
+	'harga',
+	'compare',
+	'pilih',
+	'pilihan',
+	'saran',
+	'dong',
+	'donk',
+	'nih',
+	'kah',
+	'vs',
+	'versus',
+	'mana',
+	'bandingin',
+	'which',
+	'under',
+	'di bawah',
+	'dibawah',
+	'di atas',
+	'kisaran',
+	'range',
+	'cocok',
+	'worth',
+	'oke',
+	'ok ga',
+	'ok gak',
+	'okay',
+	'layak',
+	'affordable'
 ] as const;
 
 const WORKLOAD_TERMS = [
 	'blender',
 	'gaming',
 	'gmaing',
+	'game',
 	'editing',
 	'render',
 	'coding',
+	'programming',
 	'office',
 	'school',
+	'sekolah',
 	'college',
-	'kuliah'
+	'kuliah',
+	'kerja',
+	'desain',
+	'design',
+	'dkv',
+	'arsitektur',
+	'autocad',
+	'streaming',
+	'content creation',
+	'video',
+	'photo',
+	'foto',
+	'musik',
+	'music',
+	'production'
 ] as const;
 
 const SPEC_PATTERNS = [/\b\d{1,3}\s?(gb|tb)\b/i, /\bddr[2-5]\b/i, /\bnvme\b/i] as const;
@@ -360,7 +458,7 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 	const specScore = specHits * 2 + (specHits >= 2 ? 1 : 0);
 	const hardwareScore = directHardwareScore + brandScore + platformScore + modelScore;
 	const buyingScore = countTermScore(normalized, BUYING_INTENT_PATTERNS, 2);
-	const workloadScore = hardwareScore > 0 ? countTermScore(normalized, WORKLOAD_PATTERNS, 1) : 0;
+	const workloadScore = (hardwareScore > 0 || brandScore > 0 || buyingScore > 0) ? countTermScore(normalized, WORKLOAD_PATTERNS, 1) : 0;
 	const urlScore = scoreUrls(normalized, urls);
 	const score = hardwareScore + specScore + buyingScore + workloadScore + urlScore.score;
 	const hasHardwareEvidence = hardwareScore + specScore > 0;
@@ -397,7 +495,11 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 		score >= 3 ||
 		chipModelScore >= 3 ||
 		(hardwareScore >= 2 && buyingScore + workloadScore + specScore >= 1) ||
-		(score >= 2 && urlScore.hasTechUrl)
+		(score >= 2 && urlScore.hasTechUrl) ||
+		// Casual queries: brand/product + any buying signal
+		(brandScore >= 3 && buyingScore >= 2) ||
+		// Budget + buying intent (e.g. "15 jutaan rekomendasi")
+		(buyingScore >= 4)
 	) {
 		return allowed(
 			urlScore.hasTechUrl && hardwareScore === 0 ? 'tech_listing_url' : 'tech_hardware',

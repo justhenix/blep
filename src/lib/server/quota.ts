@@ -14,10 +14,17 @@ export const hashClientAddress = (address: string | null | undefined) => {
 	return createHash('sha256').update(address).digest('hex').slice(0, 24);
 };
 
+const bypassQuota = (): BlepQuotaCheck => {
+	console.warn('[blep quota] Firebase unavailable — quota bypassed');
+	return { allowed: true, remaining: blepEnv.dailyLimit, limit: blepEnv.dailyLimit };
+};
+
 export const checkDailyQuota = async (subject: string): Promise<BlepQuotaCheck> => {
+	const db = getFirebaseDb();
+	if (!db) return bypassQuota();
+
 	const limit = blepEnv.dailyLimit;
 	const date = todayKey();
-	const db = getFirebaseDb();
 	const doc = db.collection('quotas').doc(`${safeDocId(subject)}_${date}`);
 	const snap = await doc.get();
 	const used = snap.exists ? Number(snap.get('used') ?? 0) : 0;
@@ -30,9 +37,11 @@ export const checkDailyQuota = async (subject: string): Promise<BlepQuotaCheck> 
 };
 
 export const consumeDailyQuota = async (subject: string): Promise<BlepQuotaCheck> => {
+	const db = getFirebaseDb();
+	if (!db) return bypassQuota();
+
 	const limit = blepEnv.dailyLimit;
 	const date = todayKey();
-	const db = getFirebaseDb();
 	const doc = db.collection('quotas').doc(`${safeDocId(subject)}_${date}`);
 
 	return db.runTransaction(async (tx) => {

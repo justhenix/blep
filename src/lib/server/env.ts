@@ -29,3 +29,32 @@ export const blepEnv = {
 	cacheTtlHours: parsePositiveInt(env.BLEP_CACHE_TTL_HOURS, 24),
 	promptVersion: env.BLEP_PROMPT_VERSION ?? 'v1'
 } as const;
+
+/**
+ * Whether Firebase Admin credentials are available.
+ * When false, quota/cache/abuse checks are bypassed gracefully.
+ */
+export const firebaseAvailable = Boolean(
+	blepEnv.firebaseProjectId || blepEnv.googleApplicationCredentials
+);
+
+/**
+ * Validate that required API keys exist for live mode.
+ * Returns list of missing keys. Empty list = all good.
+ */
+export const validateLiveEnv = (): string[] => {
+	if (blepEnv.useMock) return [];
+
+	const missing: string[] = [];
+
+	if (!blepEnv.geminiApiKey) missing.push('GEMINI_API_KEY');
+	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
+
+	if (!firebaseAvailable) {
+		console.warn(
+			'[blep env] Firebase credentials missing — quota/cache/abuse bypassed in live mode'
+		);
+	}
+
+	return missing;
+};

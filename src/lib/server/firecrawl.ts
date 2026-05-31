@@ -165,6 +165,21 @@ const searchQuery = async (query: string, limit: number): Promise<BlepSource[]> 
 		.filter((source): source is BlepSource => Boolean(source));
 };
 
+/** Retry search once before giving up */
+const searchWithRetry = async (query: string, limit: number): Promise<BlepSource[]> => {
+	try {
+		return await searchQuery(query, limit);
+	} catch (firstError) {
+		console.warn(`[blep firecrawl] search attempt 1 failed, retrying...`);
+		try {
+			return await searchQuery(query, limit);
+		} catch {
+			console.warn(`[blep firecrawl] search attempt 2 failed`);
+			throw firstError;
+		}
+	}
+};
+
 export const collectSources = async (
 	query: string,
 	urls: string[] = []
@@ -181,7 +196,7 @@ export const collectSources = async (
 
 	if (sources.length < BLEP_MAX_SOURCES) {
 		try {
-			const searched = await searchQuery(query, BLEP_MAX_SOURCES);
+			const searched = await searchWithRetry(query, BLEP_MAX_SOURCES);
 			sources.push(...searched);
 		} catch {
 			searchFailed = true;
@@ -190,6 +205,8 @@ export const collectSources = async (
 
 	const unique = uniqueSources(sources).slice(0, BLEP_MAX_SOURCES);
 
+	// Always return whatever we have — let the caller decide whether to proceed.
+	// Status tells the caller what happened, but we no longer kill the pipeline here.
 	if (unique.length < BLEP_MIN_LIVE_SOURCES) {
 		return {
 			sources: unique,

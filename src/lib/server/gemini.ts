@@ -22,7 +22,7 @@ import type {
 } from '$lib/blep/types';
 import { blepEnv } from './env';
 
-export type GeminiFailureCode = 'gemini_failed' | 'schema_failed';
+export type GeminiFailureCode = 'gemini_failed' | 'json_parse_failed' | 'zod_failed' | 'schema_failed';
 
 class GeminiVerdictError extends Error {
 	constructor(
@@ -222,7 +222,7 @@ const extractJsonText = (text: string) => {
 	const lastBrace = stripped.lastIndexOf('}');
 
 	if (firstBrace < 0 || lastBrace <= firstBrace) {
-		throw new GeminiVerdictError('schema_failed', 'parse');
+		throw new GeminiVerdictError('json_parse_failed', 'parse');
 	}
 
 	return stripped.slice(firstBrace, lastBrace + 1);
@@ -233,7 +233,7 @@ const assertEvidenceFromSources = (evidence: { url: string }[], sources: BlepSou
 
 	for (const item of evidence) {
 		if (!sourceUrls.has(item.url)) {
-			throw new GeminiVerdictError('schema_failed', 'schema');
+			throw new GeminiVerdictError('zod_failed', 'schema');
 		}
 	}
 };
@@ -253,7 +253,7 @@ const parseWith = <T extends BlepPhase1Output>(
 	return (raw: unknown, sources: BlepSource[]): T => {
 		const result = zodParse(raw);
 		if (!result.success) {
-			throw new GeminiVerdictError('schema_failed', 'schema');
+			throw new GeminiVerdictError('zod_failed', 'schema');
 		}
 
 		assertEvidenceFromSources(getEvidence(result.data), sources);
@@ -305,7 +305,7 @@ const parseModelText = <T extends BlepPhase1Output>(
 	try {
 		parsed = JSON.parse(extractJsonText(text));
 	} catch {
-		throw new GeminiVerdictError('schema_failed', 'parse');
+		throw new GeminiVerdictError('json_parse_failed', 'parse');
 	}
 
 	return config.parse(parsed, sources);

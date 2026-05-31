@@ -33,6 +33,28 @@
 
 	let threadEl = $state<HTMLElement | null>(null);
 
+	const DOUBT_THINKING_PHRASES = [
+		'Defending the verdict...',
+		'Checking evidence again...',
+		'Judging your argument...',
+		'Cross-checking specs...',
+		'Reading seller claims...',
+		'Still not impressed...'
+	];
+	let thinkingText = $state(DOUBT_THINKING_PHRASES[0]);
+
+	$effect(() => {
+		if (isLoading) {
+			let idx = 0;
+			thinkingText = DOUBT_THINKING_PHRASES[0];
+			const iv = setInterval(() => {
+				idx = (idx + 1) % DOUBT_THINKING_PHRASES.length;
+				thinkingText = DOUBT_THINKING_PHRASES[idx];
+			}, 1800);
+			return () => clearInterval(iv);
+		}
+	});
+
 	$effect(() => {
 		// Auto-scroll thread when messages change
 		if (doubtMessages.length || isLoading) {
@@ -78,7 +100,7 @@
 			{#if isLoading}
 				<div class="doubt-msg doubt-msg-blep">
 					<span class="doubt-msg-label font-mono-ui">BLEP</span>
-					<p class="doubt-msg-text doubt-thinking font-body">thinking...</p>
+					<p class="doubt-msg-text doubt-thinking font-body">{thinkingText}</p>
 				</div>
 			{/if}
 		</div>

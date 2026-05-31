@@ -68,6 +68,14 @@ export type BlepFallbackScanResponse = BlepQuota &
 		ok: false;
 		mode: 'fallback';
 		error: string;
+		/** Typed error code for frontend display */
+		error_code?: string;
+		/** Pipeline stage where failure occurred */
+		stage?: string;
+		/** Request trace ID for debugging */
+		traceId?: string;
+		/** Human-readable error message */
+		message?: string;
 		cached?: false;
 		retry_after_seconds?: number;
 		sources: SourceSummary[];

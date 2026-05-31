@@ -6,7 +6,7 @@ import {
 	type ScanInputGateResult
 } from '$lib/blep/input-gate';
 import { detectBlepIntent, type BlepIntentResult } from '$lib/blep/intent';
-import { buildFallbackVerdict, buildMockNeedsInput, buildMockOutput } from '$lib/blep/mock';
+import { makeSafeFallback, buildMockNeedsInput, buildMockOutput } from '$lib/blep/mock';
 import { blepScanRequestSchema } from '$lib/blep/schema';
 import type {
 	BlepPhase1Output,
@@ -16,13 +16,14 @@ import type {
 } from '$lib/blep/types';
 import { checkAndRecordAbuse } from '$lib/server/abuse';
 import { lookupCache, storeCache } from '$lib/server/cache';
-import { blepEnv } from '$lib/server/env';
-import { BlepApiError, blepError, safeParseJson, type BlepErrorCode } from '$lib/server/errors';
+import { blepEnv, validateLiveEnv } from '$lib/server/env';
+import { BlepApiError, blepError, safeParseJson, toScanErrorCode, type BlepErrorCode } from '$lib/server/errors';
 import { collectSources } from '$lib/server/firecrawl';
 import { verifyBearerToken } from '$lib/server/firebase-admin';
 import { generatePhase1, getGeminiErrorCode } from '$lib/server/gemini';
 import { checkDailyQuota, consumeDailyQuota } from '$lib/server/quota';
 import { getRequestIdentity, type RequestIdentity } from '$lib/server/request-identity';
+import { createTrace, type ScanTrace } from '$lib/server/trace';
 
 const defaultQuota = (): BlepQuotaCheck => ({
 	allowed: true,
@@ -41,17 +42,26 @@ const verdictCompat = (result: BlepPhase1Output) =>
 
 const buildFallbackResponse = (
 	error: BlepErrorCode,
+	trace: ScanTrace,
 	quota: BlepQuotaCheck = defaultQuota(),
 	query = 'Unknown device',
 	sources: { title: string; url: string }[] = [],
 	retryAfterSeconds?: number
 ): BlepScanResponse => {
-	const result = buildFallbackVerdict(query);
+	const errorCode = toScanErrorCode(error);
+	const failedStage = trace.lastFailedStage() ?? 'unknown';
+	const result = makeSafeFallback(query, error, failedStage, trace.traceId);
+
+	trace.log('fallback_returned', 'done', `error_code=${errorCode} stage=${failedStage}`);
 
 	return {
 		ok: false,
 		mode: 'fallback',
 		error,
+		error_code: errorCode,
+		stage: failedStage,
+		traceId: trace.traceId,
+		message: `Scan failed at ${failedStage}: ${error}`,
 		quota: {
 			remaining: quota.remaining,
 			limit: quota.limit
@@ -86,20 +96,25 @@ const buildLiveResponse = (
 	intent: BlepIntentResult,
 	sources: { title: string; url: string }[],
 	result: BlepPhase1Output,
+	trace: ScanTrace,
 	cached = false
-): BlepScanResponse => ({
-	ok: true,
-	mode: 'live',
-	cached,
-	quota: {
-		remaining: quota.remaining,
-		limit: quota.limit
-	},
-	intent: intent.intent,
-	sources,
-	result,
-	...verdictCompat(result)
-});
+): BlepScanResponse => {
+	trace.log('response_returned', 'done', `mode=${result.mode} cached=${cached}`);
+
+	return {
+		ok: true,
+		mode: 'live',
+		cached,
+		quota: {
+			remaining: quota.remaining,
+			limit: quota.limit
+		},
+		intent: intent.intent,
+		sources,
+		result,
+		...verdictCompat(result)
+	};
+};
 
 // NEEDS_INPUT short-circuits before any paid call. Outer mode mirrors env so the
 // demo badge stays honest, but no quota/Firecrawl/Gemini is touched.
@@ -219,11 +234,13 @@ const logInputIssues = (issues: Array<{ path: PropertyKey[]; code: string }>) =>
 };
 
 export const POST: RequestHandler = async ({ request }) => {
+	const trace = createTrace();
 	let body: unknown;
 
 	try {
 		body = await safeParseJson(request);
 	} catch (error) {
+		trace.log('request_validated', 'fail', 'json_parse');
 		if (error instanceof BlepApiError) {
 			logApiErrorCode('request_error', error.code, error.status);
 
@@ -238,11 +255,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	const parsed = blepScanRequestSchema.safeParse(body);
 
 	if (!parsed.success) {
+		trace.log('request_validated', 'fail', 'zod_validation');
 		const inputError = blepError('bad_input', 400);
 		logInputIssues(parsed.error.issues);
 
 		return respond(buildApiErrorResponse(inputError.code), { status: 400 });
 	}
+
+	trace.log('request_validated', 'done');
 
 	const query = parsed.data.query;
 	const requestUrls = parsed.data.urls ?? [];
@@ -257,6 +277,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const intent = detectBlepIntent(query, requestUrls);
+	trace.log('mode_detected', 'done', `intent=${intent.intent}`);
 	console.info(`[blep intent] routed intent=${intent.intent}`);
 
 	// NEEDS_INPUT exits before any quota / Firecrawl / Gemini work.
@@ -266,6 +287,17 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	console.info('[blep api] scan started');
 	logEnvStatus();
+
+	// Validate live env
+	const missingKeys = validateLiveEnv();
+	if (missingKeys.length > 0) {
+		trace.log('env_loaded', 'fail', `missing=${missingKeys.join(',')}`);
+		return respond(
+			buildFallbackResponse('env_missing', trace, defaultQuota(), query),
+			{ status: 200 }
+		);
+	}
+	trace.log('env_loaded', 'done');
 
 	let quota = defaultQuota();
 
@@ -295,10 +327,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		const quotaSubject = decodedToken?.uid ?? identity.identityHash;
 
 		quota = await checkDailyQuota(quotaSubject);
+		trace.log('quota_checked', 'done', `remaining=${quota.remaining}/${quota.limit}`);
 		logQuotaStatus(quota);
 
 		if (!quota.allowed) {
-			return respond(buildFallbackResponse('quota_blocked', quota, query), {
+			trace.log('quota_checked', 'fail', 'blocked');
+			return respond(buildFallbackResponse('quota_blocked', trace, quota, query), {
 				status: 429
 			});
 		}
@@ -310,45 +344,62 @@ export const POST: RequestHandler = async ({ request }) => {
 			const cacheLookup = await lookupCache({ query, urls: requestUrls });
 
 			if (cacheLookup.hit) {
+				trace.log('cache_checked', 'done', 'hit');
 				console.info(`[blep cache] hit key=${cacheLookup.cacheKey.slice(0, 12)}...`);
 
 				return respond(
-					buildLiveResponse(quota, intent, cacheLookup.sources, cacheLookup.verdict, true)
+					buildLiveResponse(quota, intent, cacheLookup.sources, cacheLookup.verdict, trace, true)
 				);
 			}
 
+			trace.log('cache_checked', 'done', 'miss');
 			console.info(`[blep cache] miss key=${cacheLookup.cacheKey.slice(0, 12)}...`);
+		} else {
+			trace.log('cache_checked', 'skipped', 'non-verdict mode');
 		}
 
 		const abuse = await checkAndRecordAbuse(identity.identityHash);
 
 		if (!abuse.allowed) {
 			return respond(
-				buildFallbackResponse(abuse.reason, quota, query, [], abuse.retryAfterSeconds),
+				buildFallbackResponse(abuse.reason, trace, quota, query, [], abuse.retryAfterSeconds),
 				{ status: 429 }
 			);
 		}
 
+		// ── Firecrawl: degrade, don't kill ──
+		trace.log('firecrawl_started', 'done');
 		const sourceResult = await collectSources(query, requestUrls);
 		logScrapeStatus(sourceResult.status, sourceResult.sources);
 		const sources = sourceSummaries(sourceResult.sources);
 
 		if (sourceResult.status !== 'ok') {
-			return respond(buildFallbackResponse(sourceResult.status, quota, query, sources));
+			trace.log('firecrawl_done', 'fail', `status=${sourceResult.status} count=${sourceResult.sources.length}`);
+			// Don't return here — continue with evidence-thin mode if we have any query text.
+			console.warn(`[blep api] firecrawl degraded: ${sourceResult.status}, proceeding evidence-thin`);
+		} else {
+			trace.log('firecrawl_done', 'done', `count=${sourceResult.sources.length}`);
 		}
 
+		// ── Gemini: attempt even with thin evidence ──
+		trace.log('gemini_started', 'done');
 		let result: BlepPhase1Output;
 		try {
 			({ result } = await generatePhase1(query, sourceResult.sources, intent));
+			trace.log('gemini_done', 'done', `mode=${result.mode}`);
+			trace.log('zod_validated', 'done');
 		} catch (error) {
-			return respond(buildFallbackResponse(getGeminiErrorCode(error), quota, query, sources));
+			const geminiCode = getGeminiErrorCode(error);
+			trace.log('gemini_done', 'fail', `code=${geminiCode}`);
+			return respond(buildFallbackResponse(geminiCode, trace, quota, query, sources), { status: 200 });
 		}
 
 		quota = await consumeDailyQuota(quotaSubject);
 		logQuotaStatus(quota);
 
 		if (!quota.allowed) {
-			return respond(buildFallbackResponse('quota_blocked', quota, query, sources), {
+			trace.log('quota_checked', 'fail', 'post-consume blocked');
+			return respond(buildFallbackResponse('quota_blocked', trace, quota, query, sources), {
 				status: 429
 			});
 		}
@@ -357,9 +408,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			await storeCache({ query, urls: requestUrls }, result, sources);
 		}
 
-		return respond(buildLiveResponse(quota, intent, sources, result, false));
+		return respond(buildLiveResponse(quota, intent, sources, result, trace, false));
 	} catch (error) {
 		logSafeError('live_error', error);
-		return respond(buildFallbackResponse('unknown', quota, query));
+		trace.log('fallback_returned', 'fail', 'unhandled_exception');
+		return respond(buildFallbackResponse('unknown', trace, quota, query), { status: 200 });
 	}
 };

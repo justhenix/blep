@@ -28,7 +28,7 @@
 		id: string;
 		name: string;
 		label: string;
-		status: 'queued' | 'running' | 'done';
+		status: 'queued' | 'running' | 'done' | 'fail' | 'skipped' | 'fallback';
 		output?: string;
 	};
 
@@ -67,8 +67,12 @@
 	type HistoryEntry = {
 		id: string;
 		query: string;
-		verdict: 'APPROVED' | 'WASTE' | 'RECOMMENDATION';
+		verdict: string;
 		timestamp: number;
+		doubtMessages?: DoubtMsg[];
+		savedMessages?: ChatMessage[];
+		savedToolSteps?: ToolStep[];
+		savedMode?: Intent;
 	};
 
 	type PromptCard = {
@@ -101,6 +105,45 @@
 	let doubtError = $state('');
 	let showRescanCta = $state(false);
 
+	// ── Dynamic thinking phrases ──
+	const THINKING_PHRASES = [
+		'Sniffing out marketing BS...',
+		'Calculating e-waste potential...',
+		'Cross-referencing real prices...',
+		'Judging...',
+		'Checking seller claims...',
+		'Scanning forum complaints...',
+		'Counting future regret...',
+		'Detecting spec inflation...',
+		'Comparing price bracket...',
+		'Reading between the lines...'
+	];
+	let thinkingPhrase = $state(THINKING_PHRASES[0]);
+	let thinkingInterval: ReturnType<typeof setInterval> | null = null;
+
+	const startThinkingCycle = () => {
+		let idx = 0;
+		thinkingPhrase = THINKING_PHRASES[0];
+		thinkingInterval = setInterval(() => {
+			idx = (idx + 1) % THINKING_PHRASES.length;
+			thinkingPhrase = THINKING_PHRASES[idx];
+		}, 2200);
+	};
+
+	const stopThinkingCycle = () => {
+		if (thinkingInterval) {
+			clearInterval(thinkingInterval);
+			thinkingInterval = null;
+		}
+	};
+
+	// ── Scan error state ──
+	let scanErrorCode = $state<string | null>(null);
+	let scanStage = $state<string | null>(null);
+	let scanTraceId = $state<string | null>(null);
+	let scanErrorMessage = $state<string | null>(null);
+	let lastScanQuery = $state<string | null>(null);
+
 	let now = $state(new Date());
 
 	const tooltipText = $derived.by(() => {
@@ -127,26 +170,32 @@
 	let chatViewportEl = $state<HTMLElement | null>(null);
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
-	const history: HistoryEntry[] = [
-		{
-			id: '1',
-			query: 'Lenovo LOQ RTX 4050 14 juta',
-			verdict: 'APPROVED',
-			timestamp: Date.now() - 86400000
-		},
-		{
-			id: '2',
-			query: 'Acer Aspire 5 Ryzen 3 12 juta',
-			verdict: 'WASTE',
-			timestamp: Date.now() - 172800000
-		},
-		{
-			id: '3',
-			query: 'Gaming laptop 15 juta recommendation',
-			verdict: 'RECOMMENDATION',
-			timestamp: Date.now() - 259200000
-		}
-	];
+	let history = $state<HistoryEntry[]>([]);
+
+	/** Save current scan result to history sidebar */
+	const saveToHistory = (query: string, verdict: string) => {
+		const entry: HistoryEntry = {
+			id: crypto.randomUUID(),
+			query,
+			verdict,
+			timestamp: Date.now(),
+			doubtMessages: [...doubtMessages],
+			savedMessages: [...messages],
+			savedToolSteps: toolSteps.map((s) => ({ ...s })),
+			savedMode: selectedMode ?? 'verdict'
+		};
+		history = [entry, ...history];
+		activeHistoryId = entry.id;
+		activeSidebarView = 'history';
+	};
+
+	/** Update doubt messages on the active history entry */
+	const syncDoubtToHistory = () => {
+		if (!activeHistoryId) return;
+		history = history.map((h) =>
+			h.id === activeHistoryId ? { ...h, doubtMessages: [...doubtMessages] } : h
+		);
+	};
 
 	const promptCards: PromptCard[] = [
 		{
@@ -223,32 +272,35 @@
 		]
 	} as const;
 
-	const LOG_OUTPUTS_BY_INTENT = {
+	const pickRandom = <T>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+	const AGENT_LOG_POOLS: Record<Intent, string[][]> = {
 		verdict: [
-			'Verdict scan request found',
-			'Parsed device name & listing details',
-			'Found comparable local options',
-			'Extracted spec sheet details',
-			'No direct listing traps detected',
-			'Verdict card complete'
+			['intent → verdict scan', 'routing to verdict judge', 'VERDICT_SCAN locked'],
+			['parsing listing data...', 'extracting device + price', 'reading seller claims'],
+			['checking live prices IDR', 'scanning tokped/shopee bracket', 'market reality check'],
+			['pulling spec sheet', 'CPU/GPU/RAM extracted', 'spec validation running'],
+			['sniffing seller cope...', 'trap scan: soldered RAM?', 'checking thermal complaints'],
+			['building verdict card', 'rendering judgment', 'verdict locked. done.']
 		],
 		recommendation: [
-			'Recommendation request found',
-			'Budget: 15 juta / market: Indonesia',
-			'Checking current price bracket',
-			'Targeting RTX 4050-class',
-			'Rejecting RTX 2050 and 8GB traps',
-			'Building recommendation panel'
+			['intent → recommendation', 'budget request detected', 'RECOMMENDATION_SCAN locked'],
+			['parsing budget ceiling', 'budget: reading IDR target', 'constraint extraction'],
+			['hunting current listings', 'scanning marketplace bracket', 'price bracket mapped'],
+			['finding target spec class', 'GPU tier selection running', 'acceptable hardware filtered'],
+			['rejecting overpriced traps', 'trap scan: 8GB soldered?', 'filtering RGB tax'],
+			['building shortlist', 'recommendation panel ready', 'picks locked. done.']
 		],
 		comparison: [
-			'Comparison request found',
-			'Options: Lenovo LOQ and Acer Nitro V detected',
-			'Querying benchmark and pricing info',
-			'Chassis & thermal performance evaluated',
-			'RAM soldered warning checked',
-			'Comparison verdict card built'
+			['intent → comparison', 'two devices detected', 'COMPARISON_SCAN locked'],
+			['parsing option A + B', 'extracting both configs', 'device pair identified'],
+			['checking prices for both', 'benchmark data lookup', 'market position compared'],
+			['spec diff running', 'thermal + chassis scored', 'side-by-side built'],
+			['checking trap asymmetry', 'RAM/storage lock check', 'upgrade path compared'],
+			['winner selected', 'comparison card built', 'judgment rendered. done.']
 		]
-	} as const;
+	};
+
 
 	const MOCK_VERDICT: VerdictResult = {
 		mode: 'VERDICT',
@@ -426,12 +478,89 @@
 		}
 	};
 
-	async function runMockScan(query: string) {
+	// ── API response → UI result adapters ──
+	const apiModeToLocal = (mode: string): Intent => {
+		switch (mode) {
+			case 'RECOMMENDATION': return 'recommendation';
+			case 'COMPARISON': return 'comparison';
+			default: return 'verdict';
+		}
+	};
+
+	const adaptVerdictResult = (r: Record<string, unknown>): VerdictResult => ({
+		mode: 'VERDICT',
+		title: (r.name as string) ?? 'Listing verdict',
+		badge: (r.verdict as string) ?? 'CAUTION',
+		fatal_flaw: (r.fatal_flaw as string) ?? 'Unknown',
+		why_it_matters: (r.summary as string) ?? '',
+		better_target: (r.better_target as string) ?? 'Check alternatives at same price bracket.',
+		next_action: 'Send listing link and BLEP will judge final pick.'
+	});
+
+	const adaptRecommendationResult = (r: Record<string, unknown>): RecommendationResult => {
+		const ts = r.target_specs as Record<string, string> | undefined;
+		const buyTarget = ts
+			? Object.values(ts).filter(Boolean)
+			: ['Check target specs in evidence'];
+		return {
+			mode: 'RECOMMENDATION',
+			title: (r.recommendation_summary as string) ?? 'Recommendation target',
+			summary: (r.recommendation_summary as string) ?? '',
+			buy_target: buyTarget,
+			avoid: (r.avoid as { pattern: string; reason: string }[]) ?? [],
+			deal_rules: (r.deal_rules as string[]) ?? [],
+			next_action: (r.next_action as string) ?? 'Send listing links for final judgment.'
+		};
+	};
+
+	const adaptComparisonResult = (r: Record<string, unknown>): ComparisonResult => {
+		const compared = (r.compared as { name: string; strengths?: string[]; flaws?: string[]; points?: string[] }[]) ?? [];
+		return {
+			mode: 'COMPARISON',
+			title: (r.reason as string) ?? 'Comparison',
+			badge: (r.verdict as string) ?? 'CLOSE_CALL',
+			summary: (r.reason as string) ?? '',
+			compared: compared.map((c) => ({
+				name: c.name,
+				points: [...(c.strengths ?? []), ...(c.flaws?.map((f) => `⚠ ${f}`) ?? []), ...(c.points ?? [])]
+			})),
+			winner_row: `Winner: ${(r.winner as string) ?? 'TBD'}`,
+			next_action: 'Send both listing links for final judgment.'
+		};
+	};
+
+	const adaptApiResult = (apiResult: Record<string, unknown>): { result: MockResult; intent: Intent } => {
+		const mode = (apiResult.mode as string) ?? 'VERDICT';
+		const intent = apiModeToLocal(mode);
+		let result: MockResult;
+		switch (mode) {
+			case 'RECOMMENDATION':
+				result = adaptRecommendationResult(apiResult);
+				break;
+			case 'COMPARISON':
+				result = adaptComparisonResult(apiResult);
+				break;
+			default:
+				result = adaptVerdictResult(apiResult);
+				break;
+		}
+		return { result, intent };
+	};
+
+	async function runLiveScan(query: string) {
 		if (!query.trim() || mode === 'running') return;
 
 		const runId = crypto.randomUUID();
 		mode = 'running';
 		activeHistoryId = null;
+		lastScanQuery = query;
+		startThinkingCycle();
+
+		// Reset error state on new scan
+		scanErrorCode = null;
+		scanStage = null;
+		scanTraceId = null;
+		scanErrorMessage = null;
 
 		if (brainJuice <= 0) {
 			messages = [
@@ -464,7 +593,6 @@
 			return;
 		}
 
-		brainJuice = Math.max(0, brainJuice - 1);
 		messages = [
 			...messages,
 			{ id: `${runId}-user`, role: 'user', content: query, timestamp: Date.now() },
@@ -478,8 +606,9 @@
 		];
 		draftInput = '';
 
-		const intent = detectIntent(query);
-		toolSteps = TOOL_STEPS_BY_INTENT[intent].map((step) => ({
+		// Use client-side intent guess for log steps; API may override later
+		const guessedIntent = detectIntent(query);
+		toolSteps = TOOL_STEPS_BY_INTENT[guessedIntent].map((step) => ({
 			...step,
 			status: 'queued' as const
 		}));
@@ -487,44 +616,216 @@
 		startElapsedTimer();
 		scrollToBottom();
 
-		try {
-			const logs = LOG_OUTPUTS_BY_INTENT[intent];
-			for (let i = 0; i < toolSteps.length; i++) {
-				toolSteps[i].status = 'running';
-				await delay(600 + Math.random() * 500);
-				toolSteps[i].status = 'done';
-				toolSteps[i].output = logs[i];
-			}
+		// Fetch-aware agentic log simulation
+		let fetchDone = false;
+		let fetchResult: Record<string, unknown> | null = null;
+		let fetchError: Error | null = null;
 
-			await delay(300);
+		// Errors that must abort scan entirely (no fallback card)
+		const HARD_ABORT_ERRORS = new Set(['quota_blocked', 'rate_limited', 'cooldown', 'bad_auth']);
+
+		const ERROR_MESSAGES: Record<string, string> = {
+			quota_blocked: 'Brain Juice empty. Try again later.',
+			rate_limited: 'Too many requests. Wait a moment.',
+			cooldown: 'BLEP is cooling down. Wait 15s.',
+			bad_auth: 'Auth failed. Try refreshing.'
+		};
+
+		const runFetch = async () => {
+			try {
+				const res = await fetch('/api/scan', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ query })
+				});
+				const data = await res.json();
+
+				if (!res.ok) {
+					const errCode = data?.error as string | undefined;
+
+					// Hard abort: quota/rate/cooldown → no card, just error bubble
+					if (errCode && HARD_ABORT_ERRORS.has(errCode)) {
+						const retryHint = data?.retry_after_seconds
+							? ` Wait ${data.retry_after_seconds}s.`
+							: '';
+						throw new Error(
+							(ERROR_MESSAGES[errCode] ?? errCode) + retryHint
+						);
+					}
+
+					// Soft fail: scraping/LLM died but backend sent fallback result → accept it
+					if (data?.result) {
+						fetchResult = data;
+						return;
+					}
+
+					// No result at all → hard error
+					throw new Error(errCode ?? `HTTP ${res.status}`);
+				}
+
+				fetchResult = data;
+			} catch (err) {
+				fetchError = err instanceof Error ? err : new Error('unknown');
+			} finally {
+				fetchDone = true;
+			}
+		};
+
+		const isFallback = () => fetchResult != null && fetchResult.ok === false;
+
+		const simulateAgenticLogs = async () => {
+			const pools = AGENT_LOG_POOLS[guessedIntent];
+			const lastIdx = toolSteps.length - 1;
+
+			for (let i = 0; i < toolSteps.length; i++) {
+				// Fetch done → flush remaining instantly with honest statuses
+				if (fetchDone && i > 0) {
+					for (let j = i; j < toolSteps.length; j++) {
+						if (fetchError) {
+							// Hard error: mark remaining as skipped, last as fail
+							toolSteps[j].status = j === lastIdx ? 'fail' : 'skipped';
+							toolSteps[j].output = j === lastIdx ? 'scan aborted.' : 'skipped.';
+						} else if (isFallback()) {
+							// Soft fail: mark remaining done but last as fallback
+							toolSteps[j].status = j === lastIdx ? 'fallback' : 'done';
+							toolSteps[j].output = j === lastIdx
+								? `fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`
+								: pickRandom(pools[j]);
+						} else {
+							toolSteps[j].status = 'done';
+							toolSteps[j].output = pickRandom(pools[j]);
+						}
+					}
+					return;
+				}
+
+				toolSteps[i].status = 'running';
+
+				if (i === lastIdx && !fetchDone) {
+					// Last step: hold + pulse until fetch resolves
+					const baseLabel = toolSteps[i].label;
+					let dots = 0;
+					const pulseInterval = setInterval(() => {
+						dots = (dots + 1) % 4;
+						toolSteps[i].label = baseLabel + '.'.repeat(dots);
+					}, 400);
+
+					while (!fetchDone) {
+						await delay(100);
+					}
+					clearInterval(pulseInterval);
+					toolSteps[i].label = baseLabel;
+
+					// Match output to fetch outcome with honest status
+					if (fetchError) {
+						toolSteps[i].status = 'fail';
+						toolSteps[i].output = 'scan aborted.';
+					} else if (isFallback()) {
+						toolSteps[i].status = 'fallback';
+						toolSteps[i].output = `fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`;
+					} else {
+						toolSteps[i].status = 'done';
+						toolSteps[i].output = pickRandom(pools[i]);
+					}
+				} else {
+					// Normal step: short delay if fetch already done, otherwise show progress
+					await delay(fetchDone ? (10 + Math.random() * 40) : (400 + Math.random() * 800));
+					toolSteps[i].status = 'done';
+					toolSteps[i].output = pickRandom(pools[i]);
+				}
+			}
+		};
+
+		// Fire both in parallel
+		const fetchPromise = runFetch();
+		const logsPromise = simulateAgenticLogs();
+		await Promise.all([fetchPromise, logsPromise]);
+
+		// Flush any stragglers — respect honest statuses
+		for (const step of toolSteps) {
+			const terminal = new Set(['done', 'fail', 'skipped', 'fallback']);
+			if (!terminal.has(step.status)) {
+				step.status = fetchError ? 'skipped' : 'done';
+			}
+		}
+
+		try {
 			stopElapsedTimer();
 
-			let result: MockResult;
-			let content = '';
-			if (intent === 'comparison') {
-				result = MOCK_COMPARISON;
-				content = 'Pick cleaner 4050 deal.';
-			} else if (intent === 'recommendation') {
-				result = MOCK_RECOMMENDATION;
-				content = 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.';
-			} else {
-				result = MOCK_VERDICT;
-				content = 'Verdict is CAUTION. Here is why.';
+			if (fetchError) throw fetchError;
+			if (!fetchResult) throw new Error('No response from API');
+
+			const apiData: Record<string, unknown> = fetchResult;
+			const apiResult = apiData.result as Record<string, unknown>;
+			if (!apiResult) {
+				throw new Error((apiData.error as string) ?? 'No result from API');
 			}
 
-			const phase1Json = getPhase1JsonForIntent(intent);
+			// Capture error state from backend response
+			if (apiData.ok === false) {
+				scanErrorCode = (apiData.error_code as string) ?? null;
+				scanStage = (apiData.stage as string) ?? null;
+				scanTraceId = (apiData.traceId as string) ?? null;
+				scanErrorMessage = (apiData.message as string) ?? null;
+			}
+
+			// Update brainJuice from backend quota
+			const quota = apiData.quota as { remaining?: number } | undefined;
+			if (quota?.remaining != null) {
+				brainJuice = quota.remaining;
+			}
+
+			// Adapt API output → UI card shapes
+			const { result, intent: resolvedIntent } = adaptApiResult(apiResult);
+			const phase1Json = apiResult as Phase1Json;
+
+			// Build content summary — annotate fallback with actual error info
+			let content = '';
+			if (isFallback()) {
+				const errorLabel = scanErrorCode ?? 'UNKNOWN';
+				const stageLabel = scanStage ?? 'unknown';
+				content = `Live scan broke at ${stageLabel} (${errorLabel}). Safe fallback returned — not a final verdict.`;
+			} else if (resolvedIntent === 'comparison') {
+				content = (apiResult.reason as string) ?? 'Comparison complete.';
+			} else if (resolvedIntent === 'recommendation') {
+				content = (apiResult.recommendation_summary as string) ?? 'Recommendation ready.';
+			} else {
+				const v = (apiResult.verdict as string) ?? 'CAUTION';
+				content = `Verdict is ${v}. Here is why.`;
+			}
+
 			messages = messages.map((m) =>
-				m.id === `${runId}-assistant` ? { ...m, status: 'done', content, result, phase1Json } : m
+				m.id === `${runId}-assistant` ? { ...m, status: 'done' as const, content, result, phase1Json } : m
 			);
-		} catch {
+
+			selectedMode = resolvedIntent;
+
+			// Save to sidebar history
+			const verdictLabel = resolvedIntent === 'recommendation'
+				? 'RECOMMENDATION'
+				: resolvedIntent === 'comparison'
+					? (apiResult.verdict as string) ?? 'COMPARISON'
+					: (apiResult.verdict as string) ?? 'CAUTION';
+			saveToHistory(query, verdictLabel);
+		} catch (err) {
+			stopElapsedTimer();
+			for (const step of toolSteps) {
+				const terminal = new Set(['done', 'fail', 'skipped', 'fallback']);
+				if (!terminal.has(step.status)) step.status = 'fail';
+			}
+			const msg = err instanceof Error ? err.message : 'Something went wrong';
 			messages = messages.map((m) =>
 				m.id === `${runId}-assistant`
-					? { ...m, status: 'error', content: 'Scan failed. Previous result kept.' }
+					? { ...m, status: 'error' as const, content: `Scan failed: ${msg}` }
 					: m
 			);
+			// Preserve input for retry
+			if (!draftInput.trim() && lastScanQuery) {
+				draftInput = lastScanQuery;
+			}
 		} finally {
+			stopThinkingCycle();
 			mode = 'done';
-			selectedMode = intent;
 			scrollToBottom();
 		}
 	}
@@ -534,7 +835,7 @@
 		if (composerMode === 'doubt') {
 			sendDoubtQuestion(draftInput.trim());
 		} else {
-			if (mode !== 'running') runMockScan(draftInput.trim());
+			if (mode !== 'running') runLiveScan(draftInput.trim());
 		}
 	};
 
@@ -604,6 +905,7 @@
 			if (!data.ok) throw new Error(data.error || 'chat_failed');
 
 			doubtMessages = [...doubtMessages, { role: 'assistant', content: data.reply }];
+			syncDoubtToHistory();
 
 			if (data.needsNewScan) {
 				showRescanCta = true;
@@ -644,89 +946,67 @@
 		doubtLoading = false;
 		doubtError = '';
 		showRescanCta = false;
+		// Reset error state
+		scanErrorCode = null;
+		scanStage = null;
+		scanTraceId = null;
+		scanErrorMessage = null;
+		lastScanQuery = null;
 	};
 
 	const handleNewScanClick = () => {
+		// Capture context before clearing
+		const contextQuery = lastScanQuery || activeOriginalInput || '';
 		clearScanContext();
 		activeHero = heroVariants[Math.floor(Math.random() * heroVariants.length)];
 		activeSidebarView = 'new_scan';
+		if (contextQuery) {
+			draftInput = contextQuery;
+		}
 		requestAnimationFrame(() => textareaEl?.focus());
 	};
 
 	const loadHistoryItem = (entry: HistoryEntry) => {
 		activeSidebarView = 'history';
 		activeHistoryId = entry.id;
-		draftInput = entry.query;
+		draftInput = '';
 		mode = 'done';
-		// Reset doubt on history load
-		composerMode = 'scan';
-		doubtMessages = [];
+
+		// Restore doubt messages from history if present
+		const savedDoubt = entry.doubtMessages ?? [];
+		doubtMessages = savedDoubt;
 		doubtLoading = false;
 		doubtError = '';
 		showRescanCta = false;
+		composerMode = savedDoubt.length > 0 ? 'doubt' : 'scan';
 
-		if (entry.verdict === 'RECOMMENDATION') {
-			selectedMode = 'recommendation';
-			messages = [
-				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: Date.now() - 5000 },
-				{
-					id: 'hist-blep',
-					role: 'blep',
-					status: 'done',
-					content: 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.',
-					timestamp: Date.now(),
-					result: MOCK_RECOMMENDATION,
-					phase1Json: MOCK_PHASE1_RECOMMENDATION
-				}
-			];
-			toolSteps = TOOL_STEPS_BY_INTENT.recommendation.map((step, i) => ({
-				...step,
-				status: 'done' as const,
-				output: LOG_OUTPUTS_BY_INTENT.recommendation[i]
-			}));
+		// Restore full saved state if available (real scans)
+		if (entry.savedMessages && entry.savedMessages.length > 0) {
+			messages = entry.savedMessages;
+			toolSteps = entry.savedToolSteps ?? [];
+			selectedMode = entry.savedMode ?? 'verdict';
 		} else {
-			selectedMode = 'verdict';
-			const res =
-				entry.verdict === 'APPROVED'
-					? {
-							mode: 'VERDICT' as const,
-							title: 'Listing verdict',
-							badge: 'APPROVED / MOCK',
-							fatal_flaw: 'None major. Solid screen and upgradeable RAM.',
-							why_it_matters:
-								'Lenovo LOQ at 14 million is one of cleaner budget RTX 4050 entries in Indonesia. Decent cooling, upgradeable slots, honest pricing.',
-							better_target: 'Compare with Acer Nitro V to see if cheaper same-spec deal exists.',
-							next_action: 'Send listing link and BLEP will judge final pick.'
-						}
-					: {
-							mode: 'VERDICT' as const,
-							title: 'Listing verdict',
-							badge: 'WASTE / MOCK',
-							fatal_flaw: 'Soldered 8GB RAM and weak CPU at 12 million.',
-							why_it_matters:
-								'At 12 million, Ryzen 3 with soldered 8GB RAM is seller charity. Find Ryzen 5 or older RTX 3050 laptops instead.',
-							better_target: 'Look for Ryzen 5 / 16GB upgradeable configs.',
-							next_action: 'Send listing link and BLEP will judge final pick.'
-						};
+			// Legacy/mock fallback for entries without saved state
+			const intent: Intent = entry.verdict === 'RECOMMENDATION' ? 'recommendation' : 'verdict';
+			selectedMode = intent;
+			const mockResult = intent === 'recommendation' ? MOCK_RECOMMENDATION : MOCK_VERDICT;
+			const mockPhase1 = intent === 'recommendation' ? MOCK_PHASE1_RECOMMENDATION : MOCK_PHASE1_VERDICT;
 			messages = [
-				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: Date.now() - 5000 },
+				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: entry.timestamp - 5000 },
 				{
 					id: 'hist-blep',
 					role: 'blep',
 					status: 'done',
-					content:
-						entry.verdict === 'APPROVED'
-							? 'Verdict is APPROVED. Here is why.'
-							: 'Verdict is WASTE. Here is why.',
-					timestamp: Date.now(),
-					result: res,
-					phase1Json: MOCK_PHASE1_VERDICT
+					content: entry.query,
+					timestamp: entry.timestamp,
+					result: mockResult,
+					phase1Json: mockPhase1
 				}
 			];
-			toolSteps = TOOL_STEPS_BY_INTENT.verdict.map((step, i) => ({
+			toolSteps = TOOL_STEPS_BY_INTENT[intent].map((step, i) => ({
 				...step,
 				status: 'done' as const,
-				output: LOG_OUTPUTS_BY_INTENT.verdict[i]
+				output: pickRandom(AGENT_LOG_POOLS[intent][i])
 			}));
 		}
 		scrollToBottom();
@@ -791,6 +1071,7 @@
 			window.removeEventListener('keydown', handleGlobalKeydown);
 			clearInterval(interval);
 			stopElapsedTimer();
+			stopThinkingCycle();
 		};
 	});
 </script>
@@ -832,15 +1113,18 @@
 			{:else}
 				<ul class="activity-steps" aria-label="Activity steps">
 					{#each toolSteps as step (step.id)}
-						<li class="activity-step" class:step-done={step.status === 'done'}>
+						<li class="activity-step" class:step-done={step.status === 'done'} class:step-fail={step.status === 'fail'} class:step-skipped={step.status === 'skipped'} class:step-fallback={step.status === 'fallback'}>
 							<div class="activity-step-head">
 								<code class="activity-step-name {fontMono}">{step.name}</code>
 								<span
 									class="activity-step-status {fontMono}"
 									class:step-running={step.status === 'running'}
 									class:step-queued={step.status === 'queued'}
+									class:step-status-fail={step.status === 'fail'}
+									class:step-status-skipped={step.status === 'skipped'}
+									class:step-status-fallback={step.status === 'fallback'}
 								>
-									{step.status}
+									{step.status.toUpperCase()}
 								</span>
 							</div>
 							<p class="activity-step-label {fontBody}">{step.label}</p>
@@ -986,7 +1270,10 @@
 		<div class="sidebar-label {fontMono}">History</div>
 
 		<ul class="sidebar-history">
-			{#each history as entry (entry.id)}
+		{#if history.length === 0}
+			<li class="sidebar-empty-hint {fontMono}">No scans yet.</li>
+		{/if}
+		{#each history as entry (entry.id)}
 				<li>
 					<button
 						class="sidebar-history-item"
@@ -1066,7 +1353,7 @@
 											<div class="msg-blep-block">
 												<span class="msg-blep-label {fontMono}">BLEP</span>
 												{#if blepMsg.status === 'loading'}
-													<p class="msg-blep-content thinking {fontBody}">{blepMsg.content}</p>
+													<p class="msg-blep-content thinking {fontBody}">{thinkingPhrase}</p>
 												{:else}
 													<p class="msg-blep-content {fontBody}">{blepMsg.content}</p>
 												{/if}
@@ -1075,6 +1362,30 @@
 
 										{#if blepMsg.result}
 											<div class="result-card" in:fly={{ y: 16, duration: 220 }}>
+												{#if scanErrorCode}
+													<div class="scan-error-banner">
+														<div class="scan-error-header">
+															<span class="scan-error-icon" aria-hidden="true">⚠</span>
+															<span class="scan-error-title {fontDisplay}">Live scan failed</span>
+														</div>
+														<div class="scan-error-details {fontMono}">
+															<span>Broke at: <strong>{scanStage ?? 'unknown'}</strong></span>
+															<span>Error: <strong>{scanErrorCode}</strong></span>
+															{#if scanTraceId}
+																<span>Trace: <strong>{scanTraceId}</strong></span>
+															{/if}
+														</div>
+														<p class="scan-error-explain {fontBody}">BLEP returned a safe fallback, not a final verdict. Do not buy based on this result alone.</p>
+														<button
+															type="button"
+															class="btnSecondary scan-error-retry"
+															onclick={() => { if (lastScanQuery) runLiveScan(lastScanQuery); }}
+															disabled={mode === 'running' || !lastScanQuery}
+														>
+															Retry live scan
+														</button>
+													</div>
+												{/if}
 												{#if blepMsg.result.mode === 'VERDICT'}
 													{@const result = blepMsg.result as VerdictResult}
 													<header class="result-header">
@@ -1165,9 +1476,11 @@
 													isDoubtActive={composerMode === 'doubt'}
 													onDoubtClick={enterDoubtMode}
 													onRescan={() => {
-														exitDoubtMode();
 														const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
-														if (lastUserMsg) runMockScan(lastUserMsg.content);
+														const contextQuery = lastUserMsg?.content ?? lastScanQuery ?? '';
+														exitDoubtMode();
+														draftInput = contextQuery;
+														requestAnimationFrame(() => textareaEl?.focus());
 													}}
 												/>
 											{/if}
@@ -1422,6 +1735,16 @@
 
 	.sidebar.collapsed .sidebar-history {
 		padding: 0 0 16px;
+	}
+
+	.sidebar-empty-hint {
+		padding: 10px 14px;
+		color: rgba(17, 17, 17, 0.35);
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		list-style: none;
 	}
 
 	.sidebar-history-item {
@@ -2157,6 +2480,69 @@
 	.activity-step-status.step-running {
 		border-color: var(--color-ink);
 		color: var(--color-ink);
+	}
+
+	.activity-step-status.step-status-fail {
+		border-color: #ef4444;
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.activity-step-status.step-status-skipped {
+		border-style: dashed;
+		opacity: 0.7;
+	}
+
+	.activity-step-status.step-status-fallback {
+		border-color: #f59e0b;
+		color: #b45309;
+		background: rgba(245, 158, 11, 0.15);
+	}
+
+	/* ── Error Banner ── */
+	.scan-error-banner {
+		margin: 16px 24px 0;
+		padding: 16px;
+		background: rgba(17, 17, 17, 0.04);
+		border: 1px dashed var(--color-ink);
+	}
+
+	.scan-error-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 8px;
+		color: #ef4444;
+	}
+
+	.scan-error-title {
+		font-size: 14px;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.scan-error-details {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: 11px;
+		color: rgba(17, 17, 17, 0.7);
+		margin-bottom: 12px;
+	}
+
+	.scan-error-explain {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--color-ink);
+		margin: 0 0 16px 0;
+		line-height: 1.4;
+	}
+
+	.scan-error-retry {
+		width: 100%;
+		min-height: 36px;
+		font-size: 12px;
 	}
 
 	.activity-step-label {

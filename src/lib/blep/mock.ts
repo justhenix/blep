@@ -15,28 +15,41 @@ import type {
 
 const fallbackEvidenceUrl = 'https://example.com/blep/mock-evidence';
 
-export const buildFallbackVerdict = (query = 'Unknown device'): BlepVerdict =>
+/**
+ * Build a safe fallback verdict with actionable failure info.
+ * Never says just "research failed" — includes real reason, stage, and traceId.
+ */
+export const makeSafeFallback = (
+	query = 'Unknown device',
+	reason = 'Unknown error',
+	stage = 'unknown',
+	traceId = 'none'
+): BlepVerdict =>
 	blepVerdictSchema.parse({
 		name: query.trim() || 'Unknown device',
 		verdict: 'CAUTION',
 		landfill_year: 2028,
-		fatal_flaw: 'Research failed before BLEP could prove value.',
+		fatal_flaw: `Live evidence failed at ${stage}. BLEP cannot prove value.`,
 		specs: {
 			upgradeable: false,
-			thermal: 'Unknown thermal behavior.',
+			thermal: 'Unknown — live scan did not complete.',
 			forum_score: 5
 		},
-		roast: 'Not enough evidence. Wallet should stay in cave.',
-		summary: 'BLEP could not complete scan, so verdict falls back to caution.',
+		roast: 'BLEP tried but the pipeline broke. Do not trust this card alone.',
+		summary: `Do not buy from this scan alone. ${reason}. Send listing link or exact specs for a real verdict.`,
 		evidence: [
 			{
-				title: 'BLEP fallback',
+				title: `BLEP fallback [${stage}]`,
 				url: fallbackEvidenceUrl,
-				quote_or_fact: 'Fallback result used when live scrape, quota, or model validation fails.',
-				relevance: 'Keeps demo stable without pretending external research happened.'
+				quote_or_fact: `Scan failed at stage: ${stage}. Trace: ${traceId}. Reason: ${reason}`,
+				relevance: 'Internal trace info — no live evidence was gathered.'
 			}
 		]
 	});
+
+/** Backward-compat alias */
+export const buildFallbackVerdict = (query = 'Unknown device'): BlepVerdict =>
+	makeSafeFallback(query, 'Research failed before BLEP could prove value', 'unknown', 'none');
 
 export const fallbackVerdict: BlepVerdict = buildFallbackVerdict();
 
