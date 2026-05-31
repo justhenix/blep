@@ -1,7 +1,25 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { spring } from 'svelte/motion';
+
+	type FooterLink = {
+		label: string;
+		href: string;
+	};
+
+	const footerPrimaryLinks: FooterLink[] = [
+		{ label: 'How it works', href: '#how-it-works' },
+		{ label: 'Demo', href: '#demo' },
+		{ label: 'Why BLEP', href: '#why-blep' },
+		{ label: 'Contact', href: 'mailto:hello@blep.local' }
+	];
+
+	const footerLegalLinks: FooterLink[] = [
+		{ label: 'Privacy Policy', href: '/privacy' },
+		{ label: 'Terms', href: '/terms' },
+		{ label: 'Judge listing', href: '/app' },
+		{ label: 'Demo verdict', href: '#demo' }
+	];
 
 	let footerInView = $state(false);
 	let footerRef = $state<HTMLElement | null>(null);
@@ -15,6 +33,13 @@
 	);
 
 	const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+	const toLandingHref = (href: string) => (page.route.id === '/' ? href : `/${href}`);
+
+	const toHref = (href: string) => {
+		if (href.startsWith('#')) return toLandingHref(href);
+		return href;
+	};
 
 	const handleMouseMove = (e: MouseEvent) => {
 		if (!footerInView || !footerRef) {
@@ -59,7 +84,7 @@
 
 	<nav class="blep-footer__links" aria-label="Footer">
 		<div class="blep-footer__col blep-footer__locale">
-			<a href={page.route.id === '/' ? '#top' : '/#top'}>
+			<a class="footer-link focus-visible-ring" href={toLandingHref('#top')}>
 				<svg
 					class="blep-footer__locale-arrow"
 					viewBox="0 0 24 24"
@@ -80,17 +105,15 @@
 		</div>
 
 		<div class="blep-footer__col">
-			<a href={page.route.id === '/' ? '#how' : '/#how'}>How it works</a>
-			<a href={page.route.id === '/' ? '#demo' : '/#demo'}>Demo</a>
-			<a href={page.route.id === '/' ? '#why' : '/#why'}>Why BLEP</a>
-			<a href="mailto:hello@blep.local">Contact</a>
+			{#each footerPrimaryLinks as link (link.label)}
+				<a class="footer-link focus-visible-ring" href={toHref(link.href)}>{link.label}</a>
+			{/each}
 		</div>
 
 		<div class="blep-footer__col">
-			<a href={resolve('/privacy')}>Privacy Policy</a>
-			<a href={resolve('/terms')}>Terms</a>
-			<a href={page.route.id === '/' ? '#demo' : '/#demo'}>Judge listing</a>
-			<a href={page.route.id === '/' ? '#verdict' : '/#verdict'}>Demo verdict</a>
+			{#each footerLegalLinks as link (link.label)}
+				<a class="footer-link focus-visible-ring" href={toHref(link.href)}>{link.label}</a>
+			{/each}
 		</div>
 	</nav>
 
@@ -173,7 +196,7 @@
 		gap: 0.65rem;
 	}
 
-	.blep-footer__col a {
+	.footer-link {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.55rem;
@@ -189,7 +212,8 @@
 		text-underline-offset: 0.16em;
 	}
 
-	.blep-footer__col a:hover {
+	.footer-link:hover,
+	.footer-link:focus-visible {
 		text-decoration-thickness: 0.12em;
 	}
 

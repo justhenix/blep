@@ -1,5 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/state';
+
+	type NavLink = {
+		label: string;
+		href: string;
+		index: '01' | '02' | '03';
+	};
+
+	const navLinks: NavLink[] = [
+		{ index: '01', label: 'How it works', href: '#how-it-works' },
+		{ index: '02', label: 'Demo', href: '#demo' },
+		{ index: '03', label: 'Why BLEP', href: '#why-blep' }
+	];
+
+	const toLandingHref = (href: string) => (page.route.id === '/' ? href : `/${href}`);
 </script>
 
 <header
@@ -10,19 +24,26 @@
 		class="mx-auto flex w-full max-w-300 items-center justify-between gap-4 px-4 py-2 sm:px-6 lg:px-8"
 		aria-label="Main"
 	>
-		<a class="focus-visible-ring flex shrink-0 items-center" href={page.route.id === '/' ? '#top' : '/#top'} aria-label="BLEP home">
+		<a class="focus-visible-ring flex shrink-0 items-center" href="/" aria-label="BLEP home">
 			<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
 		</a>
 
-		<div class="hidden items-center gap-8 font-display text-sm font-semibold text-ink/70 md:flex">
-			<a class="nav-link" href={page.route.id === '/' ? '#how' : '/#how'}>How it works</a>
-			<a class="nav-link" href={page.route.id === '/' ? '#demo' : '/#demo'}>Demo</a>
-			<a class="nav-link" href={page.route.id === '/' ? '#why' : '/#why'}>Why BLEP</a>
+		<div class="hidden items-center gap-8 md:flex" aria-label="Landing sections">
+			<ul class="flex items-center gap-8">
+				{#each navLinks as link (link.label)}
+					<li>
+						<a class="nav-link focus-visible-ring" href={toLandingHref(link.href)}>
+							<span class="nav-link__index">{link.index}</span>
+							<span>{link.label}</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
 		</div>
 
 		<a
 			class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
-			href={page.route.id === '/' ? '#demo' : '/#demo'}
+			href="/app"
 		>
 			Ask BLEP
 		</a>
@@ -31,17 +52,31 @@
 
 <style>
 	.nav-link {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.45rem;
 		font-family: var(--font-display);
+		font-size: 0.95rem;
 		font-weight: 600;
 		letter-spacing: 0.01em;
+		color: rgb(17 17 17 / 0.72);
 		text-decoration: underline;
-		text-decoration-thickness: 1px;
-		text-underline-offset: 0.25rem;
-		text-decoration-color: transparent;
+		text-decoration-thickness: 0.075em;
+		text-underline-offset: 0.16em;
 	}
 
-	.nav-link:hover {
+	.nav-link__index {
+		font-family: var(--font-mono);
+		font-size: 0.66rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		opacity: 0.7;
+	}
+
+	.nav-link:hover,
+	.nav-link:focus-visible {
 		color: var(--color-ink);
-		text-decoration-color: currentColor;
+		text-decoration-thickness: 0.12em;
 	}
 </style>

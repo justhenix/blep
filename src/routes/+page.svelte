@@ -6,16 +6,16 @@
 
 	const timelineData = [
 		{
-			title: 'Capture',
-			body: 'Paste messy listing text. BLEP strips the seller fog.'
+			title: 'Bring',
+			body: 'Paste link, screenshot, or messy listing text.'
 		},
 		{
-			title: 'Dissect',
-			body: 'It checks component age, heat, repair traps, and real complaints.'
+			title: 'Locate',
+			body: 'BLEP hunts price, specs, heat, repair traps, and complaints.'
 		},
 		{
-			title: 'Sentence',
-			body: 'You get APPROVED, CAUTION, or WASTE. No polite fog.'
+			title: 'Execute',
+			body: 'Approved. Caution. Waste.<br />No polite fog.'
 		},
 		{
 			title: 'Press X for Doubt',
@@ -23,20 +23,34 @@
 		}
 	];
 
-	const traps = [
+	const faqs = [
 		{
-			title: 'The Fake New Trap',
-			body: 'Old parts in a sealed box are still old. BLEP checks hardware age before you buy a slow paperweight.'
+			q: 'Why not just use Google AI Mode?',
+			a: 'Google explains specs. BLEP judges the deal. It turns listing noise into APPROVED, CAUTION, or WASTE.'
 		},
 		{
-			title: 'The Permanent Slowdown',
-			body: 'Soldered memory means zero upgrade path. Cute today, painful later.'
+			q: 'What does BLEP check?',
+			a: 'Price, specs, age, heat, upgrade traps, repair risk, complaints, and better options nearby.'
 		},
 		{
-			title: 'The Finger Burner',
-			body: 'Great specs mean nothing if the chassis hits 95\u00b0C and throttles itself into sadness.'
+			q: 'Can it recommend laptops too?',
+			a: 'Yes. Ask by budget and use case, like “gaming laptop 15 juta”. BLEP gives target specs, traps to avoid, and shortlist logic.'
+		},
+		{
+			q: 'What makes a deal WASTE?',
+			a: 'Old parts at new prices, weak GPU sold as gaming, soldered 8GB RAM, bad screen, hot chassis, or cheaper better options.'
+		},
+		{
+			q: 'Is BLEP always certain?',
+			a: 'No. If evidence is thin, BLEP says so. No fake confidence.'
+		},
+		{
+			q: 'What happens after verdict?',
+			a: 'You can argue with it. BLEP explains the fatal flaw and what to buy instead.'
 		}
 	];
+
+	let activeFaq = $state(0);
 
 	let windowWidth = $state(1024);
 	let windowHeight = $state(768);
@@ -214,16 +228,16 @@
 					Approved / Caution / Waste
 				</p>
 
-				<div class="mt-8 flex flex-wrap items-center gap-3">
+				<div id="demo" class="mt-8 flex scroll-mt-24 flex-wrap items-center gap-3">
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
-						href="#demo"
+						href="/app"
 					>
 						Ask BLEP
 					</a>
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
-						href="#demo"
+						href="/app"
 					>
 						Compare laptops
 					</a>
@@ -363,7 +377,10 @@
 		</div>
 	</section>
 
-	<section id="how" class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+	<section
+		id="how-it-works"
+		class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+	>
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-16 text-center">
 				<h2 class="font-display text-4xl font-bold sm:text-5xl">How it works</h2>
@@ -396,7 +413,9 @@
 							<h3 class="font-display text-2xl leading-tight font-bold sm:text-3xl">
 								{step.title}
 							</h3>
-							<p class="mt-3 text-base leading-relaxed font-medium text-ink/65">{step.body}</p>
+							<p class="mt-3 text-base leading-relaxed font-medium text-ink/65">
+								{@html step.body}
+							</p>
 						</div>
 					</div>
 				{/each}
@@ -404,27 +423,62 @@
 		</div>
 	</section>
 
-	<!-- ═══════════════ TRAP DETECTOR ═══════════════ -->
-	<section id="why" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+	<!-- ═══════════════ FAQ ═══════════════ -->
+	<section id="why-blep" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
-			<div class="mb-10 grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-				<div>
-					<h2 class="font-display text-4xl font-bold sm:text-5xl">Cheap can still be expensive.</h2>
+			<div class="grid gap-12 lg:grid-cols-[1fr_1.5fr] lg:gap-16">
+				<!-- Left Column -->
+				<div class="lg:sticky lg:top-24 lg:self-start">
+					<h2 class="font-display text-4xl leading-tight font-bold sm:text-5xl">
+						Questions before regret.
+					</h2>
+					<p class="mt-4 max-w-md text-base leading-relaxed font-medium text-ink/65">
+						Cheap can still be expensive. Know before you pay.
+					</p>
 				</div>
-				<p class="max-w-xl text-base leading-relaxed text-ink/65 lg:justify-self-end">
-					Know before you pay.
-				</p>
-			</div>
 
-			{#each traps as trap, i (trap.title)}
-				<article class="trap-row">
-					<span class="trap-num">0{i + 1}</span>
-					<div class="min-w-0">
-						<h3 class="trap-heading">{trap.title}</h3>
-						<p class="trap-body">{trap.body}</p>
-					</div>
-				</article>
-			{/each}
+				<!-- Right Column: Accordion -->
+				<div class="faq-accordion">
+					{#each faqs as faq, i (faq.q)}
+						<article class="faq-row border-t border-ink">
+							<h3>
+								<button
+									type="button"
+									class="faq-trigger flex w-full items-start justify-between py-6 text-left focus:outline-none"
+									aria-expanded={activeFaq === i}
+									onclick={() => (activeFaq = activeFaq === i ? -1 : i)}
+								>
+									<span class="pr-8 font-display text-lg font-bold sm:text-xl">{faq.q}</span>
+									<span class="faq-icon relative mt-1 h-5 w-5 shrink-0">
+										<span
+											class="absolute top-1/2 left-0 h-0.5 w-full -translate-y-1/2 bg-ink transition-transform duration-300"
+										></span>
+										<span
+											class="absolute top-0 left-1/2 h-full w-0.5 -translate-x-1/2 bg-ink transition-transform duration-300 {activeFaq ===
+											i
+												? 'scale-0 rotate-90'
+												: 'scale-100'}"
+										></span>
+									</span>
+								</button>
+							</h3>
+							<div
+								class="faq-content grid transition-[grid-template-rows,opacity] duration-300 ease-out {activeFaq ===
+								i
+									? 'grid-rows-[1fr] opacity-100'
+									: 'grid-rows-[0fr] opacity-0'}"
+							>
+								<div class="overflow-hidden">
+									<p class="pb-8 text-base leading-relaxed font-medium text-ink/65">
+										{faq.a}
+									</p>
+								</div>
+							</div>
+						</article>
+					{/each}
+					<div class="border-t border-ink"></div>
+				</div>
+			</div>
 		</div>
 	</section>
 </main>
@@ -571,44 +625,6 @@
 		grid-template-columns: 1fr 2.5rem 1fr;
 		align-items: start;
 		padding: 1.5rem 0;
-	}
-
-	/* ── Trap Detector ── */
-	.trap-row {
-		display: grid;
-		grid-template-columns: 3.5rem 1fr;
-		gap: 1.5rem;
-		align-items: start;
-		padding: 1.75rem 0;
-		border-top: 3px solid var(--color-ink);
-		transition: background-color 160ms ease;
-	}
-
-	.trap-row:hover {
-		background-color: var(--color-paper-dark);
-	}
-
-	.trap-num {
-		font-family: var(--font-body);
-		font-weight: 700;
-		font-size: 0.75rem;
-		color: rgba(17, 17, 17, 0.55);
-		padding-top: 0.35rem;
-	}
-
-	.trap-heading {
-		font-family: var(--font-display);
-		font-weight: 700;
-		font-size: 1.5rem;
-		line-height: 1.2;
-	}
-
-	.trap-body {
-		margin-top: 0.5rem;
-		font-family: var(--font-body);
-		font-weight: 500;
-		color: rgba(17, 17, 17, 0.65);
-		line-height: 1.6;
 	}
 
 	/* ── Keyframes ── */
