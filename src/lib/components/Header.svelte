@@ -4,13 +4,12 @@
 	type NavLink = {
 		label: string;
 		href: string;
-		index: '01' | '02' | '03';
 	};
 
 	const navLinks: NavLink[] = [
-		{ index: '01', label: 'How it works', href: '#how-it-works' },
-		{ index: '02', label: 'Demo', href: '#demo' },
-		{ index: '03', label: 'Why BLEP', href: '#why-blep' }
+		{ label: 'How it works', href: '#how-it-works' },
+		{ label: 'Demo', href: '#demo' },
+		{ label: 'Why BLEP', href: '#why-blep' }
 	];
 
 	const toLandingHref = (href: string) => (page.route.id === '/' ? href : `/${href}`);
@@ -33,7 +32,6 @@
 				{#each navLinks as link (link.label)}
 					<li>
 						<a class="nav-link focus-visible-ring" href={toLandingHref(link.href)}>
-							<span class="nav-link__index">{link.index}</span>
 							<span>{link.label}</span>
 						</a>
 					</li>
@@ -63,15 +61,6 @@
 		text-decoration: underline;
 		text-decoration-thickness: 0.075em;
 		text-underline-offset: 0.16em;
-	}
-
-	.nav-link__index {
-		font-family: var(--font-mono);
-		font-size: 0.66rem;
-		font-weight: 700;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		opacity: 0.7;
 	}
 
 	.nav-link:hover,
