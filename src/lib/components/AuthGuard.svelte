@@ -56,11 +56,14 @@
 			if (msg.includes('popup-closed') || msg.includes('cancelled-popup')) {
 				error = 'Sign-in popup closed. Try again.';
 			} else if (msg.includes('internal-error') || msg.includes('invalid-api-key')) {
-				error = 'Firebase API key issue. Check PUBLIC_FIREBASE_API_KEY in .env — must be a Browser key from Firebase Console > Project Settings > Web app.';
+				error =
+					'Firebase API key issue. Check PUBLIC_FIREBASE_API_KEY in .env — must be a Browser key from Firebase Console > Project Settings > Web app.';
 			} else if (msg.includes('unauthorized-domain')) {
-				error = 'Add localhost to Firebase Console > Authentication > Settings > Authorized domains.';
+				error =
+					'Add localhost to Firebase Console > Authentication > Settings > Authorized domains.';
 			} else if (msg.includes('operation-not-allowed')) {
-				error = 'Google Sign-In not enabled. Enable it in Firebase Console > Authentication > Sign-in method > Google.';
+				error =
+					'Google Sign-In not enabled. Enable it in Firebase Console > Authentication > Sign-in method > Google.';
 			} else if (msg.includes('network-request-failed')) {
 				error = 'Network error. Check your connection.';
 			} else {

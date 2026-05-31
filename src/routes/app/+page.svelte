@@ -212,12 +212,19 @@
 		}
 	};
 
-	let history = $state<HistoryEntry[]>(typeof window !== 'undefined' ? loadHistoryFromStorage() : []);
+	let history = $state<HistoryEntry[]>(
+		typeof window !== 'undefined' ? loadHistoryFromStorage() : []
+	);
 
 	// Persist history to localStorage whenever it changes
 	$effect(() => {
 		// Only save the lightweight fields — skip savedMessages/savedToolSteps (too big, not needed across refreshes)
-		const lite = history.map(({ savedMessages, savedToolSteps, ...rest }) => rest);
+		const lite = history.map((item) => {
+			const copy = { ...item };
+			delete copy.savedMessages;
+			delete copy.savedToolSteps;
+			return copy;
+		});
 		try {
 			localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(lite));
 		} catch {
@@ -279,7 +286,7 @@
 	// Sorted: pinned first, then by time, archived toggled
 	const visibleHistory = $derived(
 		history
-			.filter((h) => showArchived ? !!h.archived : !h.archived)
+			.filter((h) => (showArchived ? !!h.archived : !h.archived))
 			.sort((a, b) => {
 				if (a.pinned && !b.pinned) return -1;
 				if (!a.pinned && b.pinned) return 1;
@@ -586,9 +593,12 @@
 
 	const verdictColor = (value: string) => {
 		const upper = value.toUpperCase();
-		if (upper.includes('APPROVED') || upper.includes('WINNER') || upper.includes('CLEAR')) return 'verdict-approved';
-		if (upper.includes('CAUTION') || upper.includes('CLOSE') || upper.includes('PICKS')) return 'verdict-caution';
-		if (upper.includes('WASTE') || upper.includes('BOTH_BAD') || upper.includes('AVOID')) return 'verdict-waste';
+		if (upper.includes('APPROVED') || upper.includes('WINNER') || upper.includes('CLEAR'))
+			return 'verdict-approved';
+		if (upper.includes('CAUTION') || upper.includes('CLOSE') || upper.includes('PICKS'))
+			return 'verdict-caution';
+		if (upper.includes('WASTE') || upper.includes('BOTH_BAD') || upper.includes('AVOID'))
+			return 'verdict-waste';
 		if (upper.includes('RECOMMENDATION')) return 'verdict-recommendation';
 		return 'verdict-default';
 	};
@@ -1194,11 +1204,28 @@
 			selectedMode = entry.savedMode ?? 'verdict';
 		} else {
 			// Legacy/mock fallback for entries without saved state
-			const intent: Intent = entry.verdict === 'RECOMMENDATION' ? 'recommendation' : 'verdict';
+			const intent: Intent =
+				entry.savedMode ??
+				(entry.verdict === 'RECOMMENDATION'
+					? 'recommendation'
+					: entry.verdict.toLowerCase().includes('win') ||
+						  entry.verdict.toLowerCase().includes('close') ||
+						  entry.verdict.toLowerCase().includes('both bad')
+						? 'comparison'
+						: 'verdict');
 			selectedMode = intent;
-			const mockResult = intent === 'recommendation' ? MOCK_RECOMMENDATION : MOCK_VERDICT;
+			const mockResult =
+				intent === 'recommendation'
+					? MOCK_RECOMMENDATION
+					: intent === 'comparison'
+						? adaptComparisonResult(MOCK_PHASE1_COMPARISON)
+						: MOCK_VERDICT;
 			const mockPhase1 =
-				intent === 'recommendation' ? MOCK_PHASE1_RECOMMENDATION : MOCK_PHASE1_VERDICT;
+				intent === 'recommendation'
+					? MOCK_PHASE1_RECOMMENDATION
+					: intent === 'comparison'
+						? MOCK_PHASE1_COMPARISON
+						: MOCK_PHASE1_VERDICT;
 			messages = [
 				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: entry.timestamp - 5000 },
 				{
@@ -1459,397 +1486,487 @@
 
 <!-- TODO PROD: wrap with <AuthGuard> for Google OAuth -->
 <div
-			class="app-shell {fontBody}"
-			style:--sidebar-width={sidebarWidth}
-			style:--activity-width={activityWidth}
+	class="app-shell {fontBody}"
+	style:--sidebar-width={sidebarWidth}
+	style:--activity-width={activityWidth}
+>
+	<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
+		<div class="sidebar-brand">
+			<button
+				type="button"
+				class="sidebar-brand-button icon-only"
+				onclick={expandSidebar}
+				aria-label="Expand sidebar"
+				aria-expanded={!collapsed}
+				aria-controls="sidebar"
+			>
+				<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
+			</button>
+			<div class="sidebar-brand-expanded">
+				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
+					<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
+				</a>
+				<button
+					type="button"
+					class="btnIcon sidebar-toggle"
+					onclick={collapseSidebar}
+					aria-label="Collapse sidebar"
+					aria-expanded={!collapsed}
+					aria-controls="sidebar"
+				>
+					‹
+				</button>
+			</div>
+		</div>
+
+		<!-- TODO PROD: add user avatar + sign out here when OAuth is enabled -->
+
+		<button
+			class="sidebar-new"
+			class:active={activeSidebarView === 'new_scan'}
+			onclick={handleNewScanClick}
+			type="button"
+			aria-label="New scan"
+			aria-current={activeSidebarView === 'new_scan' ? 'page' : undefined}
 		>
-			<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
-				<div class="sidebar-brand">
+			<span class="sidebar-new-icon" aria-hidden="true">+</span>
+			<span class="sidebar-new-text">New scan</span>
+		</button>
+
+		<div class="sidebar-header-row">
+			<div class="sidebar-label {fontMono}">{showArchived ? 'Archived' : 'History'}</div>
+			<button
+				type="button"
+				class="sidebar-archive-toggle {fontMono}"
+				onclick={() => (showArchived = !showArchived)}
+				aria-label={showArchived ? 'Show active scans' : 'Show archived scans'}
+			>
+				{showArchived ? 'Active' : 'Archived'}
+			</button>
+		</div>
+
+		<ul class="sidebar-history">
+			{#if visibleHistory.length === 0}
+				<li class="sidebar-empty-hint {fontMono}">
+					{showArchived ? 'No archived scans.' : 'No scans yet.'}
+				</li>
+			{/if}
+			{#each visibleHistory as entry (entry.id)}
+				<li class="sidebar-history-li" class:is-pinned={entry.pinned}>
 					<button
+						class="sidebar-history-item"
+						class:active={activeHistoryId === entry.id}
+						onclick={() => loadHistoryItem(entry)}
 						type="button"
-						class="sidebar-brand-button icon-only"
-						onclick={expandSidebar}
-						aria-label="Expand sidebar"
-						aria-expanded={!collapsed}
-						aria-controls="sidebar"
+						aria-label={entry.query}
 					>
-						<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
+						{#if entry.pinned}
+							<span class="pin-icon" aria-label="Pinned" title="Pinned">
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									class="lucide lucide-pin"
+								>
+									<path
+										d="M9 10.76a2 2 0 0 1-1.11 1.79L4 15h16l-3.89-2.45A2 2 0 0 1 15 10.76V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5.76Z"
+									/>
+									<path d="M12 17v5" />
+								</svg>
+							</span>
+						{:else}
+							<span class="history-dot {verdictColor(entry.verdict)}" aria-hidden="true"></span>
+						{/if}
+						<span class="history-copy">
+							<span class="history-query {fontBody}">{shortenQuery(entry.query)}</span>
+							<span class="history-badge {fontMono} {verdictColor(entry.verdict)}"
+								>{entry.verdict}</span
+							>
+						</span>
 					</button>
-					<div class="sidebar-brand-expanded">
-						<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
-							<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
-						</a>
+					<div class="history-actions-wrap">
 						<button
 							type="button"
-							class="btnIcon sidebar-toggle"
-							onclick={collapseSidebar}
-							aria-label="Collapse sidebar"
-							aria-expanded={!collapsed}
-							aria-controls="sidebar"
+							class="history-menu-btn {fontMono}"
+							onclick={(e) => {
+								e.stopPropagation();
+								contextMenuId = contextMenuId === entry.id ? null : entry.id;
+							}}
+							aria-label="Chat actions"
+							aria-expanded={contextMenuId === entry.id}>⋯</button
 						>
-							‹
-						</button>
-					</div>
-				</div>
-
-				<!-- TODO PROD: add user avatar + sign out here when OAuth is enabled -->
-
-				<button
-					class="sidebar-new"
-					class:active={activeSidebarView === 'new_scan'}
-					onclick={handleNewScanClick}
-					type="button"
-					aria-label="New scan"
-					aria-current={activeSidebarView === 'new_scan' ? 'page' : undefined}
-				>
-					<span class="sidebar-new-icon" aria-hidden="true">+</span>
-					<span class="sidebar-new-text">New scan</span>
-				</button>
-
-				<div class="sidebar-header-row">
-					<div class="sidebar-label {fontMono}">{showArchived ? 'Archived' : 'History'}</div>
-					<button
-						type="button"
-						class="sidebar-archive-toggle {fontMono}"
-						onclick={() => (showArchived = !showArchived)}
-						aria-label={showArchived ? 'Show active scans' : 'Show archived scans'}
-					>
-						{showArchived ? 'Active' : 'Archived'}
-					</button>
-				</div>
-
-				<ul class="sidebar-history">
-					{#if visibleHistory.length === 0}
-						<li class="sidebar-empty-hint {fontMono}">
-							{showArchived ? 'No archived scans.' : 'No scans yet.'}
-						</li>
-					{/if}
-					{#each visibleHistory as entry (entry.id)}
-						<li class="sidebar-history-li" class:is-pinned={entry.pinned}>
-							<button
-								class="sidebar-history-item"
-								class:active={activeHistoryId === entry.id}
-								onclick={() => loadHistoryItem(entry)}
-								type="button"
-								aria-label={entry.query}
-							>
-								{#if entry.pinned}
-									<span class="pin-icon" aria-label="Pinned" title="Pinned">
-										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pin">
-											<path d="M9 10.76a2 2 0 0 1-1.11 1.79L4 15h16l-3.89-2.45A2 2 0 0 1 15 10.76V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5.76Z" />
+						{#if contextMenuId === entry.id}
+							<div class="history-context-menu" role="menu">
+								<button
+									type="button"
+									class="ctx-item {fontBody}"
+									onclick={(e) => {
+										e.stopPropagation();
+										togglePin(entry.id);
+									}}
+									role="menuitem"
+								>
+									<span class="ctx-icon">
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="lucide lucide-pin"
+										>
+											<path
+												d="M9 10.76a2 2 0 0 1-1.11 1.79L4 15h16l-3.89-2.45A2 2 0 0 1 15 10.76V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5.76Z"
+											/>
 											<path d="M12 17v5" />
 										</svg>
 									</span>
-								{:else}
-									<span class="history-dot {verdictColor(entry.verdict)}" aria-hidden="true"></span>
-								{/if}
-								<span class="history-copy">
-									<span class="history-query {fontBody}">{shortenQuery(entry.query)}</span>
-									<span class="history-badge {fontMono} {verdictColor(entry.verdict)}"
-										>{entry.verdict}</span
+									{entry.pinned ? 'Unpin' : 'Pin chat'}
+								</button>
+								{#if entry.archived}
+									<button
+										type="button"
+										class="ctx-item {fontBody}"
+										onclick={(e) => {
+											e.stopPropagation();
+											unarchiveEntry(entry.id);
+										}}
+										role="menuitem"
 									>
-								</span>
-							</button>
-							<div class="history-actions-wrap">
+										<span class="ctx-icon">
+											<svg
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												class="lucide lucide-archive"
+											>
+												<rect width="20" height="5" x="2" y="3" rx="1" />
+												<path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+												<path d="M10 12h4" />
+											</svg>
+										</span> Unarchive
+									</button>
+								{:else}
+									<button
+										type="button"
+										class="ctx-item {fontBody}"
+										onclick={(e) => {
+											e.stopPropagation();
+											archiveEntry(entry.id);
+										}}
+										role="menuitem"
+									>
+										<span class="ctx-icon">
+											<svg
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												class="lucide lucide-archive"
+											>
+												<rect width="20" height="5" x="2" y="3" rx="1" />
+												<path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+												<path d="M10 12h4" />
+											</svg>
+										</span> Archive
+									</button>
+								{/if}
 								<button
 									type="button"
-									class="history-menu-btn {fontMono}"
-									onclick={(e) => { e.stopPropagation(); contextMenuId = contextMenuId === entry.id ? null : entry.id; }}
-									aria-label="Chat actions"
-									aria-expanded={contextMenuId === entry.id}
-								>⋯</button>
-								{#if contextMenuId === entry.id}
-									<div class="history-context-menu" role="menu">
-										<button type="button" class="ctx-item {fontBody}" onclick={(e) => { e.stopPropagation(); togglePin(entry.id); }} role="menuitem">
-											<span class="ctx-icon">
-												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pin">
-													<path d="M9 10.76a2 2 0 0 1-1.11 1.79L4 15h16l-3.89-2.45A2 2 0 0 1 15 10.76V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5.76Z" />
-													<path d="M12 17v5" />
-												</svg>
-											</span> {entry.pinned ? 'Unpin' : 'Pin chat'}
-										</button>
-										{#if entry.archived}
-											<button type="button" class="ctx-item {fontBody}" onclick={(e) => { e.stopPropagation(); unarchiveEntry(entry.id); }} role="menuitem">
-												<span class="ctx-icon">
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-archive">
-														<rect width="20" height="5" x="2" y="3" rx="1" />
-														<path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-														<path d="M10 12h4" />
-													</svg>
-												</span> Unarchive
-											</button>
-										{:else}
-											<button type="button" class="ctx-item {fontBody}" onclick={(e) => { e.stopPropagation(); archiveEntry(entry.id); }} role="menuitem">
-												<span class="ctx-icon">
-													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-archive">
-														<rect width="20" height="5" x="2" y="3" rx="1" />
-														<path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-														<path d="M10 12h4" />
-													</svg>
-												</span> Archive
-											</button>
-										{/if}
-										<button type="button" class="ctx-item ctx-delete {fontBody}" onclick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} role="menuitem">
-											<span class="ctx-icon">
-												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2">
-													<path d="M3 6h18" />
-													<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-													<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-													<line x1="10" x2="10" y1="11" y2="17" />
-													<line x1="14" x2="14" y1="11" y2="17" />
-												</svg>
-											</span> Delete
-										</button>
-									</div>
-								{/if}
-							</div>
-						</li>
-					{/each}
-				</ul>
-			</aside>
-
-			<main class="main-column">
-				<header class="main-actions" aria-label="App actions">
-					<div
-						class="brain-badge {fontMono}"
-						aria-label={`Brain Juice ${brainJuice} of ${brainJuiceMax}`}
-						data-tooltip={tooltipText}
-					>
-						<span class="brain-dot" class:active={brainJuice > 0}></span>
-						BRAIN JUICE {brainJuice}/{brainJuiceMax}
-					</div>
-					<button
-						type="button"
-						class="log-toggle {fontDisplay}"
-						onclick={() => (activityOpen = !activityOpen)}
-						aria-expanded={activityOpen}
-						aria-controls="activity-panel"
-					>
-						Log
-					</button>
-				</header>
-
-				<section class="chat-viewport" bind:this={chatViewportEl} aria-label="Chat">
-					<div class="chat-inner">
-						{#if mode === 'idle'}
-							<div class="idle-stack" in:fade={{ duration: 150 }}>
-								<div class="idle-copy">
-									<div class="idle-heading-row">
-										<img src="/logo-main.svg" alt="" class="idle-mark" />
-										<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
-									</div>
-									<p class="idle-subcopy {fontBody}">
-										{activeHero.subhead}
-									</p>
-								</div>
-
-								<div class="idle-bottom">
-									{@render Composer()}
-								</div>
-							</div>
-						{:else}
-							<div class="messages-list">
-								{#each messages as msg, idx (msg.id || msg.timestamp + idx)}
-									{#if msg.role === 'user'}
-										<div class="chat-run">
-											<div class="msg-row msg-user" in:fly={{ y: 10, duration: 160 }}>
-												<div class="msg-bubble-user {fontBody}">
-													<p>{@html linkifyText(msg.content)}</p>
-												</div>
-											</div>
-
-											{#if messages[idx + 1] && messages[idx + 1].role === 'blep'}
-												{@const blepMsg = messages[idx + 1]}
-												<div class="msg-row msg-blep" in:fly={{ y: 10, duration: 160 }}>
-													<div class="msg-blep-block">
-														<span class="msg-blep-label {fontMono}">BLEP</span>
-														{#if blepMsg.status === 'loading'}
-															<p class="msg-blep-content thinking {fontBody}">{thinkingPhrase}</p>
-														{:else}
-															<p class="msg-blep-content {fontBody}">{blepMsg.content}</p>
-														{/if}
-													</div>
-												</div>
-
-												{#if blepMsg.result}
-													<div class="result-card" in:fly={{ y: 16, duration: 220 }}>
-														{#if scanErrorCode}
-															<div class="scan-error-banner">
-																<div class="scan-error-header">
-																	<span class="scan-error-icon" aria-hidden="true">⚠</span>
-																	<span class="scan-error-title {fontDisplay}"
-																		>Live scan failed</span
-																	>
-																</div>
-																<div class="scan-error-details {fontMono}">
-																	<span>Broke at: <strong>{scanStage ?? 'unknown'}</strong></span>
-																	<span>Error: <strong>{scanErrorCode}</strong></span>
-																	{#if scanTraceId}
-																		<span>Trace: <strong>{scanTraceId}</strong></span>
-																	{/if}
-																</div>
-																<p class="scan-error-explain {fontBody}">
-																	BLEP returned a safe fallback, not a final verdict. Do not buy
-																	based on this result alone.
-																</p>
-																<button
-																	type="button"
-																	class="btnSecondary scan-error-retry"
-																	onclick={() => {
-																		if (lastScanQuery) runLiveScan(lastScanQuery);
-																	}}
-																	disabled={mode === 'running' || !lastScanQuery}
-																>
-																	Retry live scan
-																</button>
-															</div>
-														{/if}
-														{#if blepMsg.result.mode === 'VERDICT'}
-															{@const result = blepMsg.result as VerdictResult}
-															<header class="result-header">
-																<h2 class="result-title {fontDisplay}">{result.title}</h2>
-																<span
-																	class="result-badge {fontDisplay} {verdictColor(result.badge)}"
-																	>{result.badge}</span
-																>
-															</header>
-															<div class="result-grid">
-																<div>
-																	<span class="result-label {fontMono}">Fatal flaw</span>
-																	<p class="result-strong {fontBody}">{result.fatal_flaw}</p>
-																</div>
-																<div>
-																	<span class="result-label {fontMono}">Better target</span>
-																	<p class="result-strong {fontBody}">{result.better_target}</p>
-																</div>
-															</div>
-															<p class="result-copy {fontBody}">{result.why_it_matters}</p>
-															<div class="result-action">
-																<span class="result-label {fontMono}">Next</span>
-																<p class="result-strong {fontBody}">Press ✕ Doubt this below to argue with the verdict, or start a new scan.</p>
-															</div>
-														{:else if blepMsg.result.mode === 'RECOMMENDATION'}
-															{@const result = blepMsg.result as RecommendationResult}
-															<header class="result-header">
-																<h2 class="result-title {fontDisplay}">{result.title}</h2>
-																<span class="result-badge {fontDisplay} verdict-approved"
-																	>RECOMMENDATION</span
-																>
-															</header>
-															<div class="result-grid">
-																<div>
-																	<span class="result-label {fontMono}">Buy target</span>
-																	<ul class="result-list {fontBody}">
-																		{#each result.buy_target.slice(0, 4) as item (item)}
-																			<li>{item}</li>
-																		{/each}
-																	</ul>
-																</div>
-																<div>
-																	<span class="result-label {fontMono}">Avoid</span>
-																	<ul class="result-list {fontBody}">
-																		{#each result.avoid.slice(0, 3) as trap (trap.pattern)}
-																			<li><strong>{trap.pattern}</strong>: {trap.reason}</li>
-																		{/each}
-																	</ul>
-																</div>
-															</div>
-															<div class="result-action">
-																<span class="result-label {fontMono}">Next</span>
-																<p class="result-strong {fontBody}">Press ✕ Doubt this to ask questions, or scan a specific listing for final judgment.</p>
-															</div>
-															{#if result.shop_links && result.shop_links.length > 0}
-																<div class="shop-links-section">
-																	<span class="result-label {fontMono}">Go shopping</span>
-																	<div class="shop-links-grid">
-																		{#each result.shop_links as link (link.url)}
-																			<a
-																				href={link.url}
-																				target="_blank"
-																				rel="noopener noreferrer"
-																				class="shop-link {fontBody}"
-																			>
-																				{link.label} ↗
-																			</a>
-																		{/each}
-																	</div>
-																</div>
-															{/if}
-														{:else}
-															{@const result = blepMsg.result as ComparisonResult}
-															{@const compBadgeLabel = result.badge === 'BOTH_BAD' ? 'BOTH BAD' : result.badge === 'CLOSE_CALL' ? 'CLOSE CALL' : result.badge === 'CLEAR_WIN' ? 'CLEAR WIN' : result.badge.replace(/_/g, ' ')}
-															<header class="result-header">
-																<h2 class="result-title {fontDisplay}">{result.title}</h2>
-																<span class="result-badge {fontDisplay} {verdictColor(result.badge)}"
-																	>{compBadgeLabel}</span
-																>
-															</header>
-															<p class="result-copy {fontBody}">{result.summary}</p>
-															<div class="compare-grid">
-																{#each result.compared as item (item.name)}
-																	<div class="compare-col">
-																		<h3 class="compare-name {fontDisplay}">{item.name}</h3>
-																		<ul class="result-list {fontBody}">
-																			{#each item.points as point (point)}
-																				<li>{point}</li>
-																			{/each}
-																		</ul>
-																	</div>
-																{/each}
-															</div>
-															<div class="result-action winner">
-																<span class="result-label {fontMono}">Winner</span>
-																<p class="result-strong {fontBody}">{result.winner_row}</p>
-															</div>
-														{/if}
-													</div>
-
-													{#if blepMsg.phase1Json && blepMsg.result}
-														<FollowUpChat
-															{doubtMessages}
-															isLoading={doubtLoading}
-															errorMsg={doubtError}
-															{showRescanCta}
-															turnCount={doubtTurnCount}
-															maxTurns={MAX_DOUBT_TURNS}
-															isDoubtActive={composerMode === 'doubt'}
-															onDoubtClick={enterDoubtMode}
-															onRescan={() => {
-																const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
-																const contextQuery = lastUserMsg?.content ?? lastScanQuery ?? '';
-																exitDoubtMode();
-																draftInput = contextQuery;
-																requestAnimationFrame(() => textareaEl?.focus());
-															}}
-														/>
-													{/if}
-												{/if}
-											{/if}
-										</div>
-									{/if}
-								{/each}
+									class="ctx-item ctx-delete {fontBody}"
+									onclick={(e) => {
+										e.stopPropagation();
+										deleteEntry(entry.id);
+									}}
+									role="menuitem"
+								>
+									<span class="ctx-icon">
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="lucide lucide-trash-2"
+										>
+											<path d="M3 6h18" />
+											<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+											<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+											<line x1="10" x2="10" y1="11" y2="17" />
+											<line x1="14" x2="14" y1="11" y2="17" />
+										</svg>
+									</span> Delete
+								</button>
 							</div>
 						{/if}
 					</div>
-				</section>
+				</li>
+			{/each}
+		</ul>
+	</aside>
 
-				{#if mode !== 'idle'}
-					<footer class="composer-dock">
-						{@render Composer()}
-					</footer>
+	<main class="main-column">
+		<header class="main-actions" aria-label="App actions">
+			<div
+				class="brain-badge {fontMono}"
+				aria-label={`Brain Juice ${brainJuice} of ${brainJuiceMax}`}
+				data-tooltip={tooltipText}
+			>
+				<span class="brain-dot" class:active={brainJuice > 0}></span>
+				BRAIN JUICE {brainJuice}/{brainJuiceMax}
+			</div>
+			<button
+				type="button"
+				class="log-toggle {fontDisplay}"
+				onclick={() => (activityOpen = !activityOpen)}
+				aria-expanded={activityOpen}
+				aria-controls="activity-panel"
+			>
+				Log
+			</button>
+		</header>
+
+		<section class="chat-viewport" bind:this={chatViewportEl} aria-label="Chat">
+			<div class="chat-inner">
+				{#if mode === 'idle'}
+					<div class="idle-stack" in:fade={{ duration: 150 }}>
+						<div class="idle-copy">
+							<div class="idle-heading-row">
+								<img src="/logo-main.svg" alt="" class="idle-mark" />
+								<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
+							</div>
+							<p class="idle-subcopy {fontBody}">
+								{activeHero.subhead}
+							</p>
+						</div>
+
+						<div class="idle-bottom">
+							{@render Composer()}
+						</div>
+					</div>
+				{:else}
+					<div class="messages-list">
+						{#each messages as msg, idx (msg.id || msg.timestamp + idx)}
+							{#if msg.role === 'user'}
+								<div class="chat-run">
+									<div class="msg-row msg-user" in:fly={{ y: 10, duration: 160 }}>
+										<div class="msg-bubble-user {fontBody}">
+											<p>{@html linkifyText(msg.content)}</p>
+										</div>
+									</div>
+
+									{#if messages[idx + 1] && messages[idx + 1].role === 'blep'}
+										{@const blepMsg = messages[idx + 1]}
+										<div class="msg-row msg-blep" in:fly={{ y: 10, duration: 160 }}>
+											<div class="msg-blep-block">
+												<span class="msg-blep-label {fontMono}">BLEP</span>
+												{#if blepMsg.status === 'loading'}
+													<p class="msg-blep-content thinking {fontBody}">{thinkingPhrase}</p>
+												{:else}
+													<p class="msg-blep-content {fontBody}">{blepMsg.content}</p>
+												{/if}
+											</div>
+										</div>
+
+										{#if blepMsg.result}
+											<div class="result-card" in:fly={{ y: 16, duration: 220 }}>
+												{#if scanErrorCode}
+													<div class="scan-error-banner">
+														<div class="scan-error-header">
+															<span class="scan-error-icon" aria-hidden="true">⚠</span>
+															<span class="scan-error-title {fontDisplay}">Live scan failed</span>
+														</div>
+														<div class="scan-error-details {fontMono}">
+															<span>Broke at: <strong>{scanStage ?? 'unknown'}</strong></span>
+															<span>Error: <strong>{scanErrorCode}</strong></span>
+															{#if scanTraceId}
+																<span>Trace: <strong>{scanTraceId}</strong></span>
+															{/if}
+														</div>
+														<p class="scan-error-explain {fontBody}">
+															BLEP returned a safe fallback, not a final verdict. Do not buy based
+															on this result alone.
+														</p>
+														<button
+															type="button"
+															class="btnSecondary scan-error-retry"
+															onclick={() => {
+																if (lastScanQuery) runLiveScan(lastScanQuery);
+															}}
+															disabled={mode === 'running' || !lastScanQuery}
+														>
+															Retry live scan
+														</button>
+													</div>
+												{/if}
+												{#if blepMsg.result.mode === 'VERDICT'}
+													{@const result = blepMsg.result as VerdictResult}
+													<header class="result-header">
+														<h2 class="result-title {fontDisplay}">{result.title}</h2>
+														<span class="result-badge {fontDisplay} {verdictColor(result.badge)}"
+															>{result.badge}</span
+														>
+													</header>
+													<div class="result-grid">
+														<div>
+															<span class="result-label {fontMono}">Fatal flaw</span>
+															<p class="result-strong {fontBody}">{result.fatal_flaw}</p>
+														</div>
+														<div>
+															<span class="result-label {fontMono}">Better target</span>
+															<p class="result-strong {fontBody}">{result.better_target}</p>
+														</div>
+													</div>
+													<p class="result-copy {fontBody}">{result.why_it_matters}</p>
+													<div class="result-action">
+														<span class="result-label {fontMono}">Next</span>
+														<p class="result-strong {fontBody}">
+															Press ✕ Doubt this below to argue with the verdict, or start a new
+															scan.
+														</p>
+													</div>
+												{:else if blepMsg.result.mode === 'RECOMMENDATION'}
+													{@const result = blepMsg.result as RecommendationResult}
+													<header class="result-header">
+														<h2 class="result-title {fontDisplay}">{result.title}</h2>
+														<span class="result-badge {fontDisplay} verdict-approved"
+															>RECOMMENDATION</span
+														>
+													</header>
+													<div class="result-grid">
+														<div>
+															<span class="result-label {fontMono}">Buy target</span>
+															<ul class="result-list {fontBody}">
+																{#each result.buy_target.slice(0, 4) as item (item)}
+																	<li>{item}</li>
+																{/each}
+															</ul>
+														</div>
+														<div>
+															<span class="result-label {fontMono}">Avoid</span>
+															<ul class="result-list {fontBody}">
+																{#each result.avoid.slice(0, 3) as trap (trap.pattern)}
+																	<li><strong>{trap.pattern}</strong>: {trap.reason}</li>
+																{/each}
+															</ul>
+														</div>
+													</div>
+													<div class="result-action">
+														<span class="result-label {fontMono}">Next</span>
+														<p class="result-strong {fontBody}">
+															Press ✕ Doubt this to ask questions, or scan a specific listing for
+															final judgment.
+														</p>
+													</div>
+													{#if result.shop_links && result.shop_links.length > 0}
+														<div class="shop-links-section">
+															<span class="result-label {fontMono}">Go shopping</span>
+															<div class="shop-links-grid">
+																{#each result.shop_links as link (link.url)}
+																	<a
+																		href={link.url}
+																		target="_blank"
+																		rel="noopener noreferrer"
+																		class="shop-link {fontBody}"
+																	>
+																		{link.label} ↗
+																	</a>
+																{/each}
+															</div>
+														</div>
+													{/if}
+												{:else}
+													{@const result = blepMsg.result as ComparisonResult}
+													{@const compBadgeLabel =
+														result.badge === 'BOTH_BAD'
+															? 'BOTH BAD'
+															: result.badge === 'CLOSE_CALL'
+																? 'CLOSE CALL'
+																: result.badge === 'CLEAR_WIN'
+																	? 'CLEAR WIN'
+																	: result.badge.replace(/_/g, ' ')}
+													<header class="result-header">
+														<h2 class="result-title {fontDisplay}">{result.title}</h2>
+														<span class="result-badge {fontDisplay} {verdictColor(result.badge)}"
+															>{compBadgeLabel}</span
+														>
+													</header>
+													<p class="result-copy {fontBody}">{result.summary}</p>
+													<div class="compare-grid">
+														{#each result.compared as item (item.name)}
+															<div class="compare-col">
+																<h3 class="compare-name {fontDisplay}">{item.name}</h3>
+																<ul class="result-list {fontBody}">
+																	{#each item.points as point (point)}
+																		<li>{point}</li>
+																	{/each}
+																</ul>
+															</div>
+														{/each}
+													</div>
+													<div class="result-action winner">
+														<span class="result-label {fontMono}">Winner</span>
+														<p class="result-strong {fontBody}">{result.winner_row}</p>
+													</div>
+												{/if}
+											</div>
+
+											{#if blepMsg.phase1Json && blepMsg.result}
+												<FollowUpChat
+													{doubtMessages}
+													isLoading={doubtLoading}
+													errorMsg={doubtError}
+													{showRescanCta}
+													turnCount={doubtTurnCount}
+													maxTurns={MAX_DOUBT_TURNS}
+													isDoubtActive={composerMode === 'doubt'}
+													onDoubtClick={enterDoubtMode}
+													onRescan={() => {
+														const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
+														const contextQuery = lastUserMsg?.content ?? lastScanQuery ?? '';
+														exitDoubtMode();
+														draftInput = contextQuery;
+														requestAnimationFrame(() => textareaEl?.focus());
+													}}
+												/>
+											{/if}
+										{/if}
+									{/if}
+								</div>
+							{/if}
+						{/each}
+					</div>
 				{/if}
-			</main>
+			</div>
+		</section>
 
-			{#if activityOpen}
-				<aside
-					id="activity-panel"
-					class="activity-panel"
-					aria-label="Activity log"
-					transition:fly={{ x: 28, duration: 180 }}
-				>
-					{@render ActivityLog()}
-				</aside>
-			{/if}
+		{#if mode !== 'idle'}
+			<footer class="composer-dock">
+				{@render Composer()}
+			</footer>
+		{/if}
+	</main>
+
+	{#if activityOpen}
+		<aside
+			id="activity-panel"
+			class="activity-panel"
+			aria-label="Activity log"
+			transition:fly={{ x: 28, duration: 180 }}
+		>
+			{@render ActivityLog()}
+		</aside>
+	{/if}
 </div>
 
 <style>
@@ -2143,7 +2260,9 @@
 		cursor: pointer;
 		padding: 4px 6px;
 		margin-top: 2px;
-		transition: color 120ms ease, background 120ms ease;
+		transition:
+			color 120ms ease,
+			background 120ms ease;
 	}
 
 	.sidebar-archive-toggle:hover {
@@ -2341,7 +2460,9 @@
 		display: inline-grid;
 		place-items: center;
 		opacity: 0.4;
-		transition: opacity 100ms ease, background 100ms ease;
+		transition:
+			opacity 100ms ease,
+			background 100ms ease;
 	}
 
 	.history-menu-btn:hover {
