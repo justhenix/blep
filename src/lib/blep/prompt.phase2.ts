@@ -66,9 +66,7 @@ export const buildPhase2Content = (
 ): string => {
 	const historyBlock =
 		messages.length > 0
-			? messages
-					.map((m) => `${m.role === 'user' ? 'USER' : 'BLEP'}: ${m.content}`)
-					.join('\n')
+			? messages.map((m) => `${m.role === 'user' ? 'USER' : 'BLEP'}: ${m.content}`).join('\n')
 			: '(no prior chat)';
 
 	return `ORIGINAL USER INPUT:

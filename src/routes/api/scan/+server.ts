@@ -17,7 +17,13 @@ import type {
 import { checkAndRecordAbuse } from '$lib/server/abuse';
 import { lookupCache, storeCache } from '$lib/server/cache';
 import { blepEnv, validateLiveEnv } from '$lib/server/env';
-import { BlepApiError, blepError, safeParseJson, toScanErrorCode, type BlepErrorCode } from '$lib/server/errors';
+import {
+	BlepApiError,
+	blepError,
+	safeParseJson,
+	toScanErrorCode,
+	type BlepErrorCode
+} from '$lib/server/errors';
 import { collectSources } from '$lib/server/firecrawl';
 import { verifyBearerToken } from '$lib/server/firebase-admin';
 import { generatePhase1, getGeminiErrorCode } from '$lib/server/gemini';
@@ -292,10 +298,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	const missingKeys = validateLiveEnv();
 	if (missingKeys.length > 0) {
 		trace.log('env_loaded', 'fail', `missing=${missingKeys.join(',')}`);
-		return respond(
-			buildFallbackResponse('env_missing', trace, defaultQuota(), query),
-			{ status: 200 }
-		);
+		return respond(buildFallbackResponse('env_missing', trace, defaultQuota(), query), {
+			status: 200
+		});
 	}
 	trace.log('env_loaded', 'done');
 
@@ -374,9 +379,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		const sources = sourceSummaries(sourceResult.sources);
 
 		if (sourceResult.status !== 'ok') {
-			trace.log('firecrawl_done', 'fail', `status=${sourceResult.status} count=${sourceResult.sources.length}`);
+			trace.log(
+				'firecrawl_done',
+				'fail',
+				`status=${sourceResult.status} count=${sourceResult.sources.length}`
+			);
 			// Don't return here — continue with evidence-thin mode if we have any query text.
-			console.warn(`[blep api] firecrawl degraded: ${sourceResult.status}, proceeding evidence-thin`);
+			console.warn(
+				`[blep api] firecrawl degraded: ${sourceResult.status}, proceeding evidence-thin`
+			);
 		} else {
 			trace.log('firecrawl_done', 'done', `count=${sourceResult.sources.length}`);
 		}
@@ -391,7 +402,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		} catch (error) {
 			const geminiCode = getGeminiErrorCode(error);
 			trace.log('gemini_done', 'fail', `code=${geminiCode}`);
-			return respond(buildFallbackResponse(geminiCode, trace, quota, query, sources), { status: 200 });
+			return respond(buildFallbackResponse(geminiCode, trace, quota, query, sources), {
+				status: 200
+			});
 		}
 
 		quota = await consumeDailyQuota(quotaSubject);

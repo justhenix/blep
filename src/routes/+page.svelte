@@ -119,7 +119,7 @@
 
 		const updateIndicatorPosition = () => {
 			if (!spineEl || stepEls.length === 0) return;
-			
+
 			// 1. Calculate active step based on viewport position
 			// Use an activation line a bit above center (0.4) to favor items we are scrolling to
 			const mid = window.innerHeight * 0.4;
@@ -212,7 +212,7 @@
 					</a>
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
-						href="/app"
+						href="/app?q=Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050, which one?"
 					>
 						Compare laptops
 					</a>

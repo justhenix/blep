@@ -22,7 +22,11 @@ import type {
 } from '$lib/blep/types';
 import { blepEnv } from './env';
 
-export type GeminiFailureCode = 'gemini_failed' | 'json_parse_failed' | 'zod_failed' | 'schema_failed';
+export type GeminiFailureCode =
+	| 'gemini_failed'
+	| 'json_parse_failed'
+	| 'zod_failed'
+	| 'schema_failed';
 
 class GeminiVerdictError extends Error {
 	constructor(

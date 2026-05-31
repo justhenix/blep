@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import FollowUpChat from '$lib/components/FollowUpChat.svelte';
+	// TODO PROD: import AuthGuard from '$lib/components/AuthGuard.svelte';
 
 	type Mode = 'idle' | 'running' | 'done';
 	type Intent = 'verdict' | 'recommendation' | 'comparison';
@@ -50,6 +51,7 @@
 		avoid: { pattern: string; reason: string }[];
 		deal_rules: string[];
 		next_action: string;
+		shop_links?: { label: string; url: string }[];
 	};
 
 	type ComparisonResult = {
@@ -73,6 +75,8 @@
 		savedMessages?: ChatMessage[];
 		savedToolSteps?: ToolStep[];
 		savedMode?: Intent;
+		pinned?: boolean;
+		archived?: boolean;
 	};
 
 	type PromptCard = {
@@ -92,12 +96,35 @@
 	let messages = $state<ChatMessage[]>([]);
 	let toolSteps = $state<ToolStep[]>([]);
 	let brainJuice = $state(3);
+	let brainJuiceMax = $state(3);
+
+	// ── IP-based session (MVP — no auth required) ──
+	// TODO PROD: replace with Google OAuth (AuthGuard)
+	const syncQuotaFromServer = async () => {
+		try {
+			const res = await fetch('/api/quota');
+			if (res.ok) {
+				const data = await res.json();
+				if (data.quota) {
+					brainJuice = data.quota.remaining;
+					brainJuiceMax = data.quota.limit;
+				}
+			}
+		} catch {
+			// Quota sync failed silently — UI keeps default
+		}
+	};
 
 	// ── Phase 2 doubt state ──
 	type ComposerMode = 'scan' | 'doubt';
 	type DoubtMsg = { role: 'user' | 'assistant'; content: string };
 	const MAX_DOUBT_TURNS = 5;
-	const DOUBT_CHIPS = ['Why is this bad?', 'Seller says it can game', 'What should I buy instead?', 'Price changed'];
+	const DOUBT_CHIPS = [
+		'Why is this bad?',
+		'Seller says it can game',
+		'What should I buy instead?',
+		'Price changed'
+	];
 
 	let composerMode = $state<ComposerMode>('scan');
 	let doubtMessages = $state<DoubtMsg[]>([]);
@@ -141,13 +168,13 @@
 	let scanErrorCode = $state<string | null>(null);
 	let scanStage = $state<string | null>(null);
 	let scanTraceId = $state<string | null>(null);
-	let scanErrorMessage = $state<string | null>(null);
+
 	let lastScanQuery = $state<string | null>(null);
 
 	let now = $state(new Date());
 
 	const tooltipText = $derived.by(() => {
-		if (brainJuice >= 3) {
+		if (brainJuice >= brainJuiceMax) {
 			return 'quota full';
 		}
 		const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
@@ -170,7 +197,33 @@
 	let chatViewportEl = $state<HTMLElement | null>(null);
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
-	let history = $state<HistoryEntry[]>([]);
+	const HISTORY_STORAGE_KEY = 'blep_history_v1';
+
+	// Load history from localStorage on init
+	const loadHistoryFromStorage = (): HistoryEntry[] => {
+		try {
+			const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+			if (!raw) return [];
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed)) return [];
+			return parsed;
+		} catch {
+			return [];
+		}
+	};
+
+	let history = $state<HistoryEntry[]>(typeof window !== 'undefined' ? loadHistoryFromStorage() : []);
+
+	// Persist history to localStorage whenever it changes
+	$effect(() => {
+		// Only save the lightweight fields — skip savedMessages/savedToolSteps (too big, not needed across refreshes)
+		const lite = history.map(({ savedMessages, savedToolSteps, ...rest }) => rest);
+		try {
+			localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(lite));
+		} catch {
+			// Storage full or unavailable — silent
+		}
+	});
 
 	/** Save current scan result to history sidebar */
 	const saveToHistory = (query: string, verdict: string) => {
@@ -196,6 +249,43 @@
 			h.id === activeHistoryId ? { ...h, doubtMessages: [...doubtMessages] } : h
 		);
 	};
+
+	// ── History actions: pin, archive, delete ──
+	let showArchived = $state(false);
+	let contextMenuId = $state<string | null>(null);
+
+	const togglePin = (id: string) => {
+		history = history.map((h) => (h.id === id ? { ...h, pinned: !h.pinned } : h));
+		contextMenuId = null;
+	};
+
+	const archiveEntry = (id: string) => {
+		history = history.map((h) => (h.id === id ? { ...h, archived: true } : h));
+		if (activeHistoryId === id) activeHistoryId = null;
+		contextMenuId = null;
+	};
+
+	const unarchiveEntry = (id: string) => {
+		history = history.map((h) => (h.id === id ? { ...h, archived: false } : h));
+		contextMenuId = null;
+	};
+
+	const deleteEntry = (id: string) => {
+		history = history.filter((h) => h.id !== id);
+		if (activeHistoryId === id) activeHistoryId = null;
+		contextMenuId = null;
+	};
+
+	// Sorted: pinned first, then by time, archived toggled
+	const visibleHistory = $derived(
+		history
+			.filter((h) => showArchived ? !!h.archived : !h.archived)
+			.sort((a, b) => {
+				if (a.pinned && !b.pinned) return -1;
+				if (!a.pinned && b.pinned) return 1;
+				return b.timestamp - a.timestamp;
+			})
+	);
 
 	const promptCards: PromptCard[] = [
 		{
@@ -238,9 +328,9 @@
 		{
 			headline: 'Know before you buy.',
 			subhead: 'Drop a listing or budget. BLEP gives clean buying signal.'
-		},
+		}
 	];
-	let activeHero = $state(heroVariants[data.initialHeroIndex ?? 0]);
+	let activeHero = $state(untrack(() => heroVariants[data.initialHeroIndex ?? 0]));
 
 	const modeByIntent = (intent: Intent | null) =>
 		promptCards.find((card) => card.intent === intent) ?? promptCards[0];
@@ -272,7 +362,7 @@
 		]
 	} as const;
 
-	const pickRandom = <T>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
+	const pickRandom = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
 	const AGENT_LOG_POOLS: Record<Intent, string[][]> = {
 		verdict: [
@@ -300,7 +390,6 @@
 			['winner selected', 'comparison card built', 'judgment rendered. done.']
 		]
 	};
-
 
 	const MOCK_VERDICT: VerdictResult = {
 		mode: 'VERDICT',
@@ -339,26 +428,6 @@
 		next_action: 'Send 2 listing links and BLEP will judge final pick.'
 	};
 
-	const MOCK_COMPARISON: ComparisonResult = {
-		mode: 'COMPARISON',
-		title: 'Pick cleaner 4050 deal',
-		badge: 'MOCK COMPARISON',
-		summary:
-			'Lenovo LOQ usually wins if cooling, RAM, and price are sane. Nitro V can win only if cheaper with same RAM and warranty.',
-		compared: [
-			{
-				name: 'Lenovo LOQ RTX 4050',
-				points: ['stronger chassis target', 'check RAM config', 'check warranty/price']
-			},
-			{
-				name: 'Acer Nitro V RTX 4050',
-				points: ['okay if cheaper', 'watch thermals', 'reject bad RAM config']
-			}
-		],
-		winner_row: 'Winner: Lenovo LOQ, unless Nitro V is meaningfully cheaper.',
-		next_action: 'Send both listing links. BLEP will judge final pick.'
-	};
-
 	// ── Mock Phase 1 JSON for doubt chat ──────────────────
 	const MOCK_PHASE1_VERDICT: Phase1Json = {
 		mode: 'VERDICT',
@@ -372,9 +441,15 @@
 			forum_score: 6
 		},
 		roast: 'Decent laptop pretending it is the only option. It is not.',
-		summary: 'Swift Go 14 is capable at 19 juta but buyer must confirm this config beats latest Ultra 5/7 OLED deals.',
+		summary:
+			'Swift Go 14 is capable at 19 juta but buyer must confirm this config beats latest Ultra 5/7 OLED deals.',
 		evidence: [
-			{ title: 'Mock spec review', url: 'https://example.com/review', quote_or_fact: 'Ultra 7 performance is competitive', relevance: 'CPU benchmark' }
+			{
+				title: 'Mock spec review',
+				url: 'https://example.com/review',
+				quote_or_fact: 'Ultra 7 performance is competitive',
+				relevance: 'CPU benchmark'
+			}
 		]
 	};
 
@@ -389,14 +464,43 @@
 			hard_constraints: []
 		},
 		recommendation_summary: 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.',
-		target_specs: { cpu: 'Ryzen 5 H-series', gpu: 'RTX 4050', ram: '16GB', storage: '512GB NVMe', screen: '15.6" 144Hz', thermal: 'Dual-fan', upgradeability: 'RAM slot preferred' },
+		target_specs: {
+			cpu: 'Ryzen 5 H-series',
+			gpu: 'RTX 4050',
+			ram: '16GB',
+			storage: '512GB NVMe',
+			screen: '15.6" 144Hz',
+			thermal: 'Dual-fan',
+			upgradeability: 'RAM slot preferred'
+		},
 		picks: [
-			{ label: 'BEST_OVERALL', name: 'Lenovo LOQ RTX 4050', expected_price_idr: 14500000, why: 'Clean budget entry', caveat: 'Check RAM config', evidence_refs: [0] },
-			{ label: 'CHEAPER_SAFE', name: 'Acer Nitro V RTX 4050', expected_price_idr: 13800000, why: 'Cheaper if available', caveat: 'Watch thermals', evidence_refs: [0] }
+			{
+				label: 'BEST_OVERALL',
+				name: 'Lenovo LOQ RTX 4050',
+				expected_price_idr: 14500000,
+				why: 'Clean budget entry',
+				caveat: 'Check RAM config',
+				evidence_refs: [0]
+			},
+			{
+				label: 'CHEAPER_SAFE',
+				name: 'Acer Nitro V RTX 4050',
+				expected_price_idr: 13800000,
+				why: 'Cheaper if available',
+				caveat: 'Watch thermals',
+				evidence_refs: [0]
+			}
 		],
 		avoid: [{ pattern: 'RTX 2050 above 10-11 juta', reason: 'Old entry GPU' }],
 		deal_rules: ['Demand RTX 4050+ at this budget'],
-		evidence: [{ title: 'Mock market scan', url: 'https://example.com/market', quote_or_fact: 'RTX 4050 available from 13-15 juta', relevance: 'Price bracket' }],
+		evidence: [
+			{
+				title: 'Mock market scan',
+				url: 'https://example.com/market',
+				quote_or_fact: 'RTX 4050 available from 13-15 juta',
+				relevance: 'Price bracket'
+			}
+		],
 		confidence: 'MEDIUM',
 		next_action: 'Send listing links for final judgment'
 	};
@@ -409,22 +513,54 @@
 		verdict: 'CLOSE_CALL',
 		reason: 'LOQ wins on cooling and build. Nitro V only if meaningfully cheaper.',
 		compared: [
-			{ name: 'Lenovo LOQ RTX 4050', price_idr: 14500000, strengths: ['Better chassis'], flaws: ['Pricier'], verdict: 'APPROVED' },
-			{ name: 'Acer Nitro V RTX 4050', price_idr: 13800000, strengths: ['Cheaper'], flaws: ['Thermal concerns'], verdict: 'CAUTION' }
+			{
+				name: 'Lenovo LOQ RTX 4050',
+				price_idr: 14500000,
+				strengths: ['Better chassis'],
+				flaws: ['Pricier'],
+				verdict: 'APPROVED'
+			},
+			{
+				name: 'Acer Nitro V RTX 4050',
+				price_idr: 13800000,
+				strengths: ['Cheaper'],
+				flaws: ['Thermal concerns'],
+				verdict: 'CAUTION'
+			}
 		],
-		evidence: [{ title: 'Mock comparison', url: 'https://example.com/vs', quote_or_fact: 'LOQ thermals measured better', relevance: 'Thermal test' }],
+		evidence: [
+			{
+				title: 'Mock comparison',
+				url: 'https://example.com/vs',
+				quote_or_fact: 'LOQ thermals measured better',
+				relevance: 'Thermal test'
+			}
+		],
 		confidence: 'MEDIUM'
 	};
 
-	const getPhase1JsonForIntent = (intent: Intent): Phase1Json => {
-		switch (intent) {
-			case 'recommendation': return MOCK_PHASE1_RECOMMENDATION;
-			case 'comparison': return MOCK_PHASE1_COMPARISON;
-			default: return MOCK_PHASE1_VERDICT;
-		}
+	const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+	/** Turn URLs in text into clickable <a> tags */
+	const linkifyText = (text: string): string => {
+		return text.replace(
+			/(https?:\/\/[^\s]+)/g,
+			'<a href="$1" target="_blank" rel="noopener noreferrer" class="chat-link">$1</a>'
+		);
 	};
 
-	const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+	/** Shorten long queries (especially URLs) for sidebar display */
+	const shortenQuery = (query: string, max = 50): string => {
+		// If it contains a URL, extract domain + short label
+		const urlMatch = query.match(/https?:\/\/([^/\s]+)(\/[^\s]*)?/);
+		if (urlMatch) {
+			const domain = urlMatch[1].replace('www.', '');
+			const rest = query.replace(urlMatch[0], '').trim();
+			const label = rest ? `${domain} — ${rest}` : `${domain} link`;
+			return label.length > max ? label.slice(0, max - 1) + '…' : label;
+		}
+		return query.length > max ? query.slice(0, max - 1) + '…' : query;
+	};
 
 	const detectIntent = (query: string): Intent => {
 		const lower = query.toLowerCase();
@@ -450,9 +586,9 @@
 
 	const verdictColor = (value: string) => {
 		const upper = value.toUpperCase();
-		if (upper.includes('APPROVED')) return 'verdict-approved';
-		if (upper.includes('CAUTION')) return 'verdict-caution';
-		if (upper.includes('WASTE')) return 'verdict-waste';
+		if (upper.includes('APPROVED') || upper.includes('WINNER') || upper.includes('CLEAR')) return 'verdict-approved';
+		if (upper.includes('CAUTION') || upper.includes('CLOSE') || upper.includes('PICKS')) return 'verdict-caution';
+		if (upper.includes('WASTE') || upper.includes('BOTH_BAD') || upper.includes('AVOID')) return 'verdict-waste';
 		if (upper.includes('RECOMMENDATION')) return 'verdict-recommendation';
 		return 'verdict-default';
 	};
@@ -481,9 +617,12 @@
 	// ── API response → UI result adapters ──
 	const apiModeToLocal = (mode: string): Intent => {
 		switch (mode) {
-			case 'RECOMMENDATION': return 'recommendation';
-			case 'COMPARISON': return 'comparison';
-			default: return 'verdict';
+			case 'RECOMMENDATION':
+				return 'recommendation';
+			case 'COMPARISON':
+				return 'comparison';
+			default:
+				return 'verdict';
 		}
 	};
 
@@ -497,11 +636,23 @@
 		next_action: 'Send listing link and BLEP will judge final pick.'
 	});
 
+	const buildShopLinks = (picks: { name: string }[]): { label: string; url: string }[] => {
+		const links: { label: string; url: string }[] = [];
+		const topPicks = picks.slice(0, 3);
+		for (const pick of topPicks) {
+			const q = encodeURIComponent(pick.name);
+			links.push(
+				{ label: `${pick.name} — Tokopedia`, url: `https://www.tokopedia.com/search?q=${q}` },
+				{ label: `${pick.name} — Shopee`, url: `https://shopee.co.id/search?keyword=${q}` }
+			);
+		}
+		return links;
+	};
+
 	const adaptRecommendationResult = (r: Record<string, unknown>): RecommendationResult => {
 		const ts = r.target_specs as Record<string, string> | undefined;
-		const buyTarget = ts
-			? Object.values(ts).filter(Boolean)
-			: ['Check target specs in evidence'];
+		const buyTarget = ts ? Object.values(ts).filter(Boolean) : ['Check target specs in evidence'];
+		const picks = (r.picks as { name: string }[]) ?? [];
 		return {
 			mode: 'RECOMMENDATION',
 			title: (r.recommendation_summary as string) ?? 'Recommendation target',
@@ -509,12 +660,19 @@
 			buy_target: buyTarget,
 			avoid: (r.avoid as { pattern: string; reason: string }[]) ?? [],
 			deal_rules: (r.deal_rules as string[]) ?? [],
-			next_action: (r.next_action as string) ?? 'Send listing links for final judgment.'
+			next_action: (r.next_action as string) ?? 'Send listing links for final judgment.',
+			shop_links: picks.length > 0 ? buildShopLinks(picks) : undefined
 		};
 	};
 
 	const adaptComparisonResult = (r: Record<string, unknown>): ComparisonResult => {
-		const compared = (r.compared as { name: string; strengths?: string[]; flaws?: string[]; points?: string[] }[]) ?? [];
+		const compared =
+			(r.compared as {
+				name: string;
+				strengths?: string[];
+				flaws?: string[];
+				points?: string[];
+			}[]) ?? [];
 		return {
 			mode: 'COMPARISON',
 			title: (r.reason as string) ?? 'Comparison',
@@ -522,14 +680,20 @@
 			summary: (r.reason as string) ?? '',
 			compared: compared.map((c) => ({
 				name: c.name,
-				points: [...(c.strengths ?? []), ...(c.flaws?.map((f) => `⚠ ${f}`) ?? []), ...(c.points ?? [])]
+				points: [
+					...(c.strengths ?? []),
+					...(c.flaws?.map((f) => `⚠ ${f}`) ?? []),
+					...(c.points ?? [])
+				]
 			})),
 			winner_row: `Winner: ${(r.winner as string) ?? 'TBD'}`,
 			next_action: 'Send both listing links for final judgment.'
 		};
 	};
 
-	const adaptApiResult = (apiResult: Record<string, unknown>): { result: MockResult; intent: Intent } => {
+	const adaptApiResult = (
+		apiResult: Record<string, unknown>
+	): { result: MockResult; intent: Intent } => {
 		const mode = (apiResult.mode as string) ?? 'VERDICT';
 		const intent = apiModeToLocal(mode);
 		let result: MockResult;
@@ -560,7 +724,6 @@
 		scanErrorCode = null;
 		scanStage = null;
 		scanTraceId = null;
-		scanErrorMessage = null;
 
 		if (brainJuice <= 0) {
 			messages = [
@@ -578,10 +741,10 @@
 			scrollToBottom();
 			await delay(1000);
 			const tiredResponses = [
-				"BLEP is tired, ask again later!",
-				"BLEPpp?! Oh, no BLEP is tired. Ask again later?",
-				"Sorry buddy, ask me again later okay?",
-				"My silicon brain is completely out of juice. Try again later!",
+				'BLEP is tired, ask again later!',
+				'BLEPpp?! Oh, no BLEP is tired. Ask again later?',
+				'Sorry buddy, ask me again later okay?',
+				'My silicon brain is completely out of juice. Try again later!',
 				"I'm depleted. No more hardware judging for now. Ask me again later!"
 			];
 			const randomResponse = tiredResponses[Math.floor(Math.random() * tiredResponses.length)];
@@ -633,9 +796,10 @@
 
 		const runFetch = async () => {
 			try {
+				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 				const res = await fetch('/api/scan', {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					body: JSON.stringify({ query })
 				});
 				const data = await res.json();
@@ -648,9 +812,7 @@
 						const retryHint = data?.retry_after_seconds
 							? ` Wait ${data.retry_after_seconds}s.`
 							: '';
-						throw new Error(
-							(ERROR_MESSAGES[errCode] ?? errCode) + retryHint
-						);
+						throw new Error((ERROR_MESSAGES[errCode] ?? errCode) + retryHint);
 					}
 
 					// Soft fail: scraping/LLM died but backend sent fallback result → accept it
@@ -688,9 +850,10 @@
 						} else if (isFallback()) {
 							// Soft fail: mark remaining done but last as fallback
 							toolSteps[j].status = j === lastIdx ? 'fallback' : 'done';
-							toolSteps[j].output = j === lastIdx
-								? `fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`
-								: pickRandom(pools[j]);
+							toolSteps[j].output =
+								j === lastIdx
+									? `fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`
+									: pickRandom(pools[j]);
 						} else {
 							toolSteps[j].status = 'done';
 							toolSteps[j].output = pickRandom(pools[j]);
@@ -722,14 +885,15 @@
 						toolSteps[i].output = 'scan aborted.';
 					} else if (isFallback()) {
 						toolSteps[i].status = 'fallback';
-						toolSteps[i].output = `fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`;
+						toolSteps[i].output =
+							`fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`;
 					} else {
 						toolSteps[i].status = 'done';
 						toolSteps[i].output = pickRandom(pools[i]);
 					}
 				} else {
 					// Normal step: short delay if fetch already done, otherwise show progress
-					await delay(fetchDone ? (10 + Math.random() * 40) : (400 + Math.random() * 800));
+					await delay(fetchDone ? 10 + Math.random() * 40 : 400 + Math.random() * 800);
 					toolSteps[i].status = 'done';
 					toolSteps[i].output = pickRandom(pools[i]);
 				}
@@ -766,46 +930,88 @@
 				scanErrorCode = (apiData.error_code as string) ?? null;
 				scanStage = (apiData.stage as string) ?? null;
 				scanTraceId = (apiData.traceId as string) ?? null;
-				scanErrorMessage = (apiData.message as string) ?? null;
 			}
 
-			// Update brainJuice from backend quota
-			const quota = apiData.quota as { remaining?: number } | undefined;
-			if (quota?.remaining != null) {
+			// Update brainJuice from backend quota — but ignore fake/declined quotas
+			const quota = apiData.quota as { remaining?: number; limit?: number } | undefined;
+			const apiMode = (apiData.mode as string) ?? '';
+			if (
+				quota?.remaining != null &&
+				apiMode !== 'declined' &&
+				apiMode !== 'mock' &&
+				(quota.limit ?? 0) < 900
+			) {
 				brainJuice = quota.remaining;
+				if (quota.limit) brainJuiceMax = quota.limit;
 			}
 
 			// Adapt API output → UI card shapes
 			const { result, intent: resolvedIntent } = adaptApiResult(apiResult);
 			const phase1Json = apiResult as Phase1Json;
 
-			// Build content summary — annotate fallback with actual error info
+			// Build content summary — short TLDR for the bubble, card has full details
 			let content = '';
-			if (isFallback()) {
-				const errorLabel = scanErrorCode ?? 'UNKNOWN';
+			const isDeclined = apiMode === 'declined';
+			if (isDeclined) {
+				// Friendly decline — no scary card
+				const declineVariants = [
+					"BLEP couldn't understand that one. Try pasting a laptop listing, specs, or ask something like 'gaming laptop 15 juta'.",
+					"Hmm, BLEP needs a hardware question. Try 'rekomendasi laptop coding 10 juta' or paste a listing link.",
+					'BLEP is having a hard time with that. Mind rephrasing? Try mentioning a device, budget, or paste a link.'
+				];
+				content = declineVariants[Math.floor(Math.random() * declineVariants.length)];
+				// No result card for declined — just show message
+				messages = messages.map((m) =>
+					m.id === `${runId}-assistant`
+						? { ...m, status: 'done' as const, content, result: null, phase1Json: null }
+						: m
+				);
+				mode = 'done';
+				stopThinkingCycle();
+				scrollToBottom();
+				return;
+			} else if (isFallback()) {
 				const stageLabel = scanStage ?? 'unknown';
-				content = `Live scan broke at ${stageLabel} (${errorLabel}). Safe fallback returned — not a final verdict.`;
+				content = `Live scan hit a bump at ${stageLabel}. Fallback result below — not final.`;
 			} else if (resolvedIntent === 'comparison') {
-				content = (apiResult.reason as string) ?? 'Comparison complete.';
+				content = 'Comparison complete. See the breakdown below.';
 			} else if (resolvedIntent === 'recommendation') {
-				content = (apiResult.recommendation_summary as string) ?? 'Recommendation ready.';
+				content = 'Here are your options. Full breakdown below.';
 			} else {
 				const v = (apiResult.verdict as string) ?? 'CAUTION';
-				content = `Verdict is ${v}. Here is why.`;
+				const roast = (apiResult.roast as string) ?? '';
+				content = roast || `Verdict: ${v}. Details below.`;
 			}
 
 			messages = messages.map((m) =>
-				m.id === `${runId}-assistant` ? { ...m, status: 'done' as const, content, result, phase1Json } : m
+				m.id === `${runId}-assistant`
+					? { ...m, status: 'done' as const, content, result, phase1Json }
+					: m
 			);
 
 			selectedMode = resolvedIntent;
 
-			// Save to sidebar history
-			const verdictLabel = resolvedIntent === 'recommendation'
-				? 'RECOMMENDATION'
-				: resolvedIntent === 'comparison'
-					? (apiResult.verdict as string) ?? 'COMPARISON'
-					: (apiResult.verdict as string) ?? 'CAUTION';
+			// Save to sidebar history — build human-readable badge
+			let verdictLabel: string;
+			if (resolvedIntent === 'recommendation') {
+				verdictLabel = 'PICKS READY';
+			} else if (resolvedIntent === 'comparison') {
+				const rawVerdict = (apiResult.verdict as string) ?? 'COMPARISON';
+				const winner = (apiResult.winner as string) ?? '';
+				if (rawVerdict === 'BOTH_BAD') {
+					verdictLabel = 'BOTH BAD';
+				} else if (winner) {
+					// Truncate long winner names
+					const short = winner.length > 20 ? winner.slice(0, 18) + '…' : winner;
+					verdictLabel = `${short} wins`;
+				} else if (rawVerdict === 'CLOSE_CALL') {
+					verdictLabel = 'CLOSE CALL';
+				} else {
+					verdictLabel = rawVerdict.replace(/_/g, ' ');
+				}
+			} else {
+				verdictLabel = (apiResult.verdict as string) ?? 'CAUTION';
+			}
 			saveToHistory(query, verdictLabel);
 		} catch (err) {
 			stopElapsedTimer();
@@ -885,9 +1091,10 @@
 				.slice(0, -1)
 				.map((m) => ({ role: m.role, content: m.content }));
 
+			const chatHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
 			const res = await fetch('/api/chat', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: chatHeaders,
 				body: JSON.stringify({
 					originalInput: activeOriginalInput,
 					phase1Result: activePhase1Json,
@@ -950,7 +1157,7 @@
 		scanErrorCode = null;
 		scanStage = null;
 		scanTraceId = null;
-		scanErrorMessage = null;
+
 		lastScanQuery = null;
 	};
 
@@ -990,7 +1197,8 @@
 			const intent: Intent = entry.verdict === 'RECOMMENDATION' ? 'recommendation' : 'verdict';
 			selectedMode = intent;
 			const mockResult = intent === 'recommendation' ? MOCK_RECOMMENDATION : MOCK_VERDICT;
-			const mockPhase1 = intent === 'recommendation' ? MOCK_PHASE1_RECOMMENDATION : MOCK_PHASE1_VERDICT;
+			const mockPhase1 =
+				intent === 'recommendation' ? MOCK_PHASE1_RECOMMENDATION : MOCK_PHASE1_VERDICT;
 			messages = [
 				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: entry.timestamp - 5000 },
 				{
@@ -1019,9 +1227,7 @@
 		const last = messages.findLast((m) => m.role === 'blep' && m.phase1Json);
 		return last?.phase1Json ?? null;
 	});
-	const activeOriginalInput = $derived(
-		messages.find((m) => m.role === 'user')?.content ?? ''
-	);
+	const activeOriginalInput = $derived(messages.find((m) => m.role === 'user')?.content ?? '');
 
 	const canSubmit = $derived(
 		draftInput.trim().length > 0 &&
@@ -1040,7 +1246,19 @@
 		document.documentElement.classList.add('app-lock');
 		document.body.classList.add('app-lock');
 
+		// Sync quota from server (IP-based)
+		syncQuotaFromServer();
+
 		textareaEl?.focus();
+
+		// Inject template query parameter if present in URL
+		const urlParams = new URLSearchParams(window.location.search);
+		const initialQuery = urlParams.get('q');
+		if (initialQuery) {
+			draftInput = initialQuery;
+			const guessedIntent = detectIntent(initialQuery);
+			selectedMode = guessedIntent;
+		}
 		const mediaQuery = window.matchMedia('(max-width: 980px)');
 		const syncMobileRail = () => {
 			isMobileRail = mediaQuery.matches;
@@ -1056,7 +1274,8 @@
 		// Keyboard shortcut: press 'x' to enter doubt mode (not while typing)
 		const handleGlobalKeydown = (e: KeyboardEvent) => {
 			const tag = (e.target as HTMLElement)?.tagName;
-			if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable)
+				return;
 			if (e.key === 'x' && mode === 'done' && activePhase1Json && composerMode === 'scan') {
 				e.preventDefault();
 				enterDoubtMode();
@@ -1064,11 +1283,20 @@
 		};
 		window.addEventListener('keydown', handleGlobalKeydown);
 
+		// Close context menu on click outside
+		const handleClickOutside = (e: MouseEvent) => {
+			if (contextMenuId && !(e.target as HTMLElement)?.closest('.history-actions-wrap')) {
+				contextMenuId = null;
+			}
+		};
+		document.addEventListener('click', handleClickOutside);
+
 		return () => {
 			document.documentElement.classList.remove('app-lock');
 			document.body.classList.remove('app-lock');
 			mediaQuery.removeEventListener('change', syncMobileRail);
 			window.removeEventListener('keydown', handleGlobalKeydown);
+			document.removeEventListener('click', handleClickOutside);
 			clearInterval(interval);
 			stopElapsedTimer();
 			stopThinkingCycle();
@@ -1113,7 +1341,13 @@
 			{:else}
 				<ul class="activity-steps" aria-label="Activity steps">
 					{#each toolSteps as step (step.id)}
-						<li class="activity-step" class:step-done={step.status === 'done'} class:step-fail={step.status === 'fail'} class:step-skipped={step.status === 'skipped'} class:step-fallback={step.status === 'fallback'}>
+						<li
+							class="activity-step"
+							class:step-done={step.status === 'done'}
+							class:step-fail={step.status === 'fail'}
+							class:step-skipped={step.status === 'skipped'}
+							class:step-fallback={step.status === 'fallback'}
+						>
 							<div class="activity-step-head">
 								<code class="activity-step-name {fontMono}">{step.name}</code>
 								<span
@@ -1145,7 +1379,9 @@
 			<div class="doubt-mode-pill">
 				<div class="doubt-pill-left">
 					<span class="doubt-pill-icon" aria-hidden="true">✕</span>
-					<span class="doubt-pill-text {fontMono}">Doubting current verdict · Chat only · No Brain Juice</span>
+					<span class="doubt-pill-text {fontMono}"
+						>Doubting current verdict · Chat only · No Brain Juice</span
+					>
 				</div>
 				<button type="button" class="doubt-pill-exit btnGhost" onclick={exitDoubtMode}>
 					Back to new scan
@@ -1221,296 +1457,399 @@
 	</div>
 {/snippet}
 
+<!-- TODO PROD: wrap with <AuthGuard> for Google OAuth -->
 <div
-	class="app-shell {fontBody}"
-	style:--sidebar-width={sidebarWidth}
-	style:--activity-width={activityWidth}
->
-	<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
-		<div class="sidebar-brand">
-			<button
-				type="button"
-				class="sidebar-brand-button icon-only"
-				onclick={expandSidebar}
-				aria-label="Expand sidebar"
-				aria-expanded={!collapsed}
-				aria-controls="sidebar"
-			>
-				<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
-			</button>
-			<div class="sidebar-brand-expanded">
-				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
-					<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
-				</a>
-				<button
-					type="button"
-					class="btnIcon sidebar-toggle"
-					onclick={collapseSidebar}
-					aria-label="Collapse sidebar"
-					aria-expanded={!collapsed}
-					aria-controls="sidebar"
-				>
-					‹
-				</button>
-			</div>
-		</div>
-
-		<button
-			class="sidebar-new"
-			class:active={activeSidebarView === 'new_scan'}
-			onclick={handleNewScanClick}
-			type="button"
-			aria-label="New scan"
-			aria-current={activeSidebarView === 'new_scan' ? 'page' : undefined}
+			class="app-shell {fontBody}"
+			style:--sidebar-width={sidebarWidth}
+			style:--activity-width={activityWidth}
 		>
-			<span class="sidebar-new-icon" aria-hidden="true">+</span>
-			<span class="sidebar-new-text">New scan</span>
-		</button>
-
-		<div class="sidebar-label {fontMono}">History</div>
-
-		<ul class="sidebar-history">
-		{#if history.length === 0}
-			<li class="sidebar-empty-hint {fontMono}">No scans yet.</li>
-		{/if}
-		{#each history as entry (entry.id)}
-				<li>
+			<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
+				<div class="sidebar-brand">
 					<button
-						class="sidebar-history-item"
-						class:active={activeHistoryId === entry.id}
-						onclick={() => loadHistoryItem(entry)}
 						type="button"
-						aria-label={entry.query}
+						class="sidebar-brand-button icon-only"
+						onclick={expandSidebar}
+						aria-label="Expand sidebar"
+						aria-expanded={!collapsed}
+						aria-controls="sidebar"
 					>
-						<span class="history-dot {verdictColor(entry.verdict)}" aria-hidden="true"></span>
-						<span class="history-copy">
-							<span class="history-query {fontBody}">{entry.query}</span>
-							<span class="history-badge {fontMono} {verdictColor(entry.verdict)}"
-								>{entry.verdict}</span
-							>
-						</span>
+						<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
 					</button>
-				</li>
-			{/each}
-		</ul>
-	</aside>
-
-	<main class="main-column">
-		<header class="main-actions" aria-label="App actions">
-			<div class="brain-badge {fontMono}" aria-label={`Brain Juice ${brainJuice} of 3`} data-tooltip={tooltipText}>
-				<span class="brain-dot" class:active={brainJuice > 0}></span>
-				BRAIN JUICE {brainJuice}/3
-			</div>
-			<button
-				type="button"
-				class="log-toggle {fontDisplay}"
-				onclick={() => (activityOpen = !activityOpen)}
-				aria-expanded={activityOpen}
-				aria-controls="activity-panel"
-			>
-				Log
-			</button>
-		</header>
-
-		<section class="chat-viewport" bind:this={chatViewportEl} aria-label="Chat">
-			<div class="chat-inner">
-				{#if mode === 'idle'}
-					<div class="idle-stack" in:fade={{ duration: 150 }}>
-						<div class="idle-copy">
-							<div class="idle-heading-row">
-								<img src="/logo-main.svg" alt="" class="idle-mark" />
-								<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
-							</div>
-							<p class="idle-subcopy {fontBody}">
-								{activeHero.subhead}
-							</p>
-						</div>
-
-						<div class="idle-bottom">
-							{@render Composer()}
-						</div>
+					<div class="sidebar-brand-expanded">
+						<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
+							<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
+						</a>
+						<button
+							type="button"
+							class="btnIcon sidebar-toggle"
+							onclick={collapseSidebar}
+							aria-label="Collapse sidebar"
+							aria-expanded={!collapsed}
+							aria-controls="sidebar"
+						>
+							‹
+						</button>
 					</div>
-				{:else}
-					<div class="messages-list">
-						{#each messages as msg, idx (msg.id || msg.timestamp + idx)}
-							{#if msg.role === 'user'}
-								<div class="chat-run">
-									<div
-										class="msg-row msg-user"
-										in:fly={{ y: 10, duration: 160 }}
+				</div>
+
+				<!-- TODO PROD: add user avatar + sign out here when OAuth is enabled -->
+
+				<button
+					class="sidebar-new"
+					class:active={activeSidebarView === 'new_scan'}
+					onclick={handleNewScanClick}
+					type="button"
+					aria-label="New scan"
+					aria-current={activeSidebarView === 'new_scan' ? 'page' : undefined}
+				>
+					<span class="sidebar-new-icon" aria-hidden="true">+</span>
+					<span class="sidebar-new-text">New scan</span>
+				</button>
+
+				<div class="sidebar-header-row">
+					<div class="sidebar-label {fontMono}">{showArchived ? 'Archived' : 'History'}</div>
+					<button
+						type="button"
+						class="sidebar-archive-toggle {fontMono}"
+						onclick={() => (showArchived = !showArchived)}
+						aria-label={showArchived ? 'Show active scans' : 'Show archived scans'}
+					>
+						{showArchived ? 'Active' : 'Archived'}
+					</button>
+				</div>
+
+				<ul class="sidebar-history">
+					{#if visibleHistory.length === 0}
+						<li class="sidebar-empty-hint {fontMono}">
+							{showArchived ? 'No archived scans.' : 'No scans yet.'}
+						</li>
+					{/if}
+					{#each visibleHistory as entry (entry.id)}
+						<li class="sidebar-history-li" class:is-pinned={entry.pinned}>
+							<button
+								class="sidebar-history-item"
+								class:active={activeHistoryId === entry.id}
+								onclick={() => loadHistoryItem(entry)}
+								type="button"
+								aria-label={entry.query}
+							>
+								{#if entry.pinned}
+									<span class="pin-icon" aria-label="Pinned" title="Pinned">
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pin">
+											<path d="M9 10.76a2 2 0 0 1-1.11 1.79L4 15h16l-3.89-2.45A2 2 0 0 1 15 10.76V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5.76Z" />
+											<path d="M12 17v5" />
+										</svg>
+									</span>
+								{:else}
+									<span class="history-dot {verdictColor(entry.verdict)}" aria-hidden="true"></span>
+								{/if}
+								<span class="history-copy">
+									<span class="history-query {fontBody}">{shortenQuery(entry.query)}</span>
+									<span class="history-badge {fontMono} {verdictColor(entry.verdict)}"
+										>{entry.verdict}</span
 									>
-										<div class="msg-bubble-user {fontBody}">
-											<p>{msg.content}</p>
-										</div>
-									</div>
-
-									{#if messages[idx + 1] && messages[idx + 1].role === 'blep'}
-										{@const blepMsg = messages[idx + 1]}
-										<div
-											class="msg-row msg-blep"
-											in:fly={{ y: 10, duration: 160 }}
-										>
-											<div class="msg-blep-block">
-												<span class="msg-blep-label {fontMono}">BLEP</span>
-												{#if blepMsg.status === 'loading'}
-													<p class="msg-blep-content thinking {fontBody}">{thinkingPhrase}</p>
-												{:else}
-													<p class="msg-blep-content {fontBody}">{blepMsg.content}</p>
-												{/if}
-											</div>
-										</div>
-
-										{#if blepMsg.result}
-											<div class="result-card" in:fly={{ y: 16, duration: 220 }}>
-												{#if scanErrorCode}
-													<div class="scan-error-banner">
-														<div class="scan-error-header">
-															<span class="scan-error-icon" aria-hidden="true">⚠</span>
-															<span class="scan-error-title {fontDisplay}">Live scan failed</span>
-														</div>
-														<div class="scan-error-details {fontMono}">
-															<span>Broke at: <strong>{scanStage ?? 'unknown'}</strong></span>
-															<span>Error: <strong>{scanErrorCode}</strong></span>
-															{#if scanTraceId}
-																<span>Trace: <strong>{scanTraceId}</strong></span>
-															{/if}
-														</div>
-														<p class="scan-error-explain {fontBody}">BLEP returned a safe fallback, not a final verdict. Do not buy based on this result alone.</p>
-														<button
-															type="button"
-															class="btnSecondary scan-error-retry"
-															onclick={() => { if (lastScanQuery) runLiveScan(lastScanQuery); }}
-															disabled={mode === 'running' || !lastScanQuery}
-														>
-															Retry live scan
-														</button>
-													</div>
-												{/if}
-												{#if blepMsg.result.mode === 'VERDICT'}
-													{@const result = blepMsg.result as VerdictResult}
-													<header class="result-header">
-														<h2 class="result-title {fontDisplay}">{result.title}</h2>
-														<span class="result-badge {fontDisplay} {verdictColor(result.badge)}"
-															>{result.badge}</span
-														>
-													</header>
-													<div class="result-grid">
-														<div>
-															<span class="result-label {fontMono}">Fatal flaw</span>
-															<p class="result-strong {fontBody}">{result.fatal_flaw}</p>
-														</div>
-														<div>
-															<span class="result-label {fontMono}">Better target</span>
-															<p class="result-strong {fontBody}">{result.better_target}</p>
-														</div>
-													</div>
-													<p class="result-copy {fontBody}">{result.why_it_matters}</p>
-													<div class="result-action">
-														<span class="result-label {fontMono}">Next</span>
-														<p class="result-strong {fontBody}">{result.next_action}</p>
-													</div>
-												{:else if blepMsg.result.mode === 'RECOMMENDATION'}
-													{@const result = blepMsg.result as RecommendationResult}
-													<header class="result-header">
-														<h2 class="result-title {fontDisplay}">{result.title}</h2>
-														<span class="result-badge {fontDisplay} verdict-approved">RECOMMENDATION</span
-														>
-													</header>
-													<p class="result-copy {fontBody}">{result.summary}</p>
-													<div class="result-grid">
-														<div>
-															<span class="result-label {fontMono}">Buy target</span>
-															<ul class="result-list {fontBody}">
-																{#each result.buy_target.slice(0, 4) as item (item)}
-																	<li>{item}</li>
-																{/each}
-															</ul>
-														</div>
-														<div>
-															<span class="result-label {fontMono}">Avoid</span>
-															<ul class="result-list {fontBody}">
-																{#each result.avoid.slice(0, 3) as trap (trap.pattern)}
-																	<li><strong>{trap.pattern}</strong>: {trap.reason}</li>
-																{/each}
-															</ul>
-														</div>
-													</div>
-													<div class="result-action">
-														<span class="result-label {fontMono}">Next</span>
-														<p class="result-strong {fontBody}">{result.next_action}</p>
-													</div>
-												{:else}
-													{@const result = blepMsg.result as ComparisonResult}
-													<header class="result-header">
-														<h2 class="result-title {fontDisplay}">{result.title}</h2>
-														<span class="result-badge {fontDisplay} verdict-caution">{result.badge}</span>
-													</header>
-													<p class="result-copy {fontBody}">{result.summary}</p>
-													<div class="compare-grid">
-														{#each result.compared as item (item.name)}
-															<div class="compare-col">
-																<h3 class="compare-name {fontDisplay}">{item.name}</h3>
-																<ul class="result-list {fontBody}">
-																	{#each item.points as point (point)}
-																		<li>{point}</li>
-																	{/each}
-																</ul>
-															</div>
-														{/each}
-													</div>
-													<div class="result-action winner">
-														<span class="result-label {fontMono}">Winner</span>
-														<p class="result-strong {fontBody}">{result.winner_row}</p>
-													</div>
-												{/if}
-											</div>
-
-											{#if blepMsg.phase1Json && blepMsg.result}
-												<FollowUpChat
-													{doubtMessages}
-													isLoading={doubtLoading}
-													errorMsg={doubtError}
-													{showRescanCta}
-													turnCount={doubtTurnCount}
-													maxTurns={MAX_DOUBT_TURNS}
-													isDoubtActive={composerMode === 'doubt'}
-													onDoubtClick={enterDoubtMode}
-													onRescan={() => {
-														const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
-														const contextQuery = lastUserMsg?.content ?? lastScanQuery ?? '';
-														exitDoubtMode();
-														draftInput = contextQuery;
-														requestAnimationFrame(() => textareaEl?.focus());
-													}}
-												/>
-											{/if}
+								</span>
+							</button>
+							<div class="history-actions-wrap">
+								<button
+									type="button"
+									class="history-menu-btn {fontMono}"
+									onclick={(e) => { e.stopPropagation(); contextMenuId = contextMenuId === entry.id ? null : entry.id; }}
+									aria-label="Chat actions"
+									aria-expanded={contextMenuId === entry.id}
+								>⋯</button>
+								{#if contextMenuId === entry.id}
+									<div class="history-context-menu" role="menu">
+										<button type="button" class="ctx-item {fontBody}" onclick={(e) => { e.stopPropagation(); togglePin(entry.id); }} role="menuitem">
+											<span class="ctx-icon">
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pin">
+													<path d="M9 10.76a2 2 0 0 1-1.11 1.79L4 15h16l-3.89-2.45A2 2 0 0 1 15 10.76V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5.76Z" />
+													<path d="M12 17v5" />
+												</svg>
+											</span> {entry.pinned ? 'Unpin' : 'Pin chat'}
+										</button>
+										{#if entry.archived}
+											<button type="button" class="ctx-item {fontBody}" onclick={(e) => { e.stopPropagation(); unarchiveEntry(entry.id); }} role="menuitem">
+												<span class="ctx-icon">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-archive">
+														<rect width="20" height="5" x="2" y="3" rx="1" />
+														<path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+														<path d="M10 12h4" />
+													</svg>
+												</span> Unarchive
+											</button>
+										{:else}
+											<button type="button" class="ctx-item {fontBody}" onclick={(e) => { e.stopPropagation(); archiveEntry(entry.id); }} role="menuitem">
+												<span class="ctx-icon">
+													<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-archive">
+														<rect width="20" height="5" x="2" y="3" rx="1" />
+														<path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+														<path d="M10 12h4" />
+													</svg>
+												</span> Archive
+											</button>
 										{/if}
-									{/if}
-								</div>
-							{/if}
-						{/each}
+										<button type="button" class="ctx-item ctx-delete {fontBody}" onclick={(e) => { e.stopPropagation(); deleteEntry(entry.id); }} role="menuitem">
+											<span class="ctx-icon">
+												<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash-2">
+													<path d="M3 6h18" />
+													<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+													<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+													<line x1="10" x2="10" y1="11" y2="17" />
+													<line x1="14" x2="14" y1="11" y2="17" />
+												</svg>
+											</span> Delete
+										</button>
+									</div>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</aside>
+
+			<main class="main-column">
+				<header class="main-actions" aria-label="App actions">
+					<div
+						class="brain-badge {fontMono}"
+						aria-label={`Brain Juice ${brainJuice} of ${brainJuiceMax}`}
+						data-tooltip={tooltipText}
+					>
+						<span class="brain-dot" class:active={brainJuice > 0}></span>
+						BRAIN JUICE {brainJuice}/{brainJuiceMax}
 					</div>
+					<button
+						type="button"
+						class="log-toggle {fontDisplay}"
+						onclick={() => (activityOpen = !activityOpen)}
+						aria-expanded={activityOpen}
+						aria-controls="activity-panel"
+					>
+						Log
+					</button>
+				</header>
+
+				<section class="chat-viewport" bind:this={chatViewportEl} aria-label="Chat">
+					<div class="chat-inner">
+						{#if mode === 'idle'}
+							<div class="idle-stack" in:fade={{ duration: 150 }}>
+								<div class="idle-copy">
+									<div class="idle-heading-row">
+										<img src="/logo-main.svg" alt="" class="idle-mark" />
+										<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
+									</div>
+									<p class="idle-subcopy {fontBody}">
+										{activeHero.subhead}
+									</p>
+								</div>
+
+								<div class="idle-bottom">
+									{@render Composer()}
+								</div>
+							</div>
+						{:else}
+							<div class="messages-list">
+								{#each messages as msg, idx (msg.id || msg.timestamp + idx)}
+									{#if msg.role === 'user'}
+										<div class="chat-run">
+											<div class="msg-row msg-user" in:fly={{ y: 10, duration: 160 }}>
+												<div class="msg-bubble-user {fontBody}">
+													<p>{@html linkifyText(msg.content)}</p>
+												</div>
+											</div>
+
+											{#if messages[idx + 1] && messages[idx + 1].role === 'blep'}
+												{@const blepMsg = messages[idx + 1]}
+												<div class="msg-row msg-blep" in:fly={{ y: 10, duration: 160 }}>
+													<div class="msg-blep-block">
+														<span class="msg-blep-label {fontMono}">BLEP</span>
+														{#if blepMsg.status === 'loading'}
+															<p class="msg-blep-content thinking {fontBody}">{thinkingPhrase}</p>
+														{:else}
+															<p class="msg-blep-content {fontBody}">{blepMsg.content}</p>
+														{/if}
+													</div>
+												</div>
+
+												{#if blepMsg.result}
+													<div class="result-card" in:fly={{ y: 16, duration: 220 }}>
+														{#if scanErrorCode}
+															<div class="scan-error-banner">
+																<div class="scan-error-header">
+																	<span class="scan-error-icon" aria-hidden="true">⚠</span>
+																	<span class="scan-error-title {fontDisplay}"
+																		>Live scan failed</span
+																	>
+																</div>
+																<div class="scan-error-details {fontMono}">
+																	<span>Broke at: <strong>{scanStage ?? 'unknown'}</strong></span>
+																	<span>Error: <strong>{scanErrorCode}</strong></span>
+																	{#if scanTraceId}
+																		<span>Trace: <strong>{scanTraceId}</strong></span>
+																	{/if}
+																</div>
+																<p class="scan-error-explain {fontBody}">
+																	BLEP returned a safe fallback, not a final verdict. Do not buy
+																	based on this result alone.
+																</p>
+																<button
+																	type="button"
+																	class="btnSecondary scan-error-retry"
+																	onclick={() => {
+																		if (lastScanQuery) runLiveScan(lastScanQuery);
+																	}}
+																	disabled={mode === 'running' || !lastScanQuery}
+																>
+																	Retry live scan
+																</button>
+															</div>
+														{/if}
+														{#if blepMsg.result.mode === 'VERDICT'}
+															{@const result = blepMsg.result as VerdictResult}
+															<header class="result-header">
+																<h2 class="result-title {fontDisplay}">{result.title}</h2>
+																<span
+																	class="result-badge {fontDisplay} {verdictColor(result.badge)}"
+																	>{result.badge}</span
+																>
+															</header>
+															<div class="result-grid">
+																<div>
+																	<span class="result-label {fontMono}">Fatal flaw</span>
+																	<p class="result-strong {fontBody}">{result.fatal_flaw}</p>
+																</div>
+																<div>
+																	<span class="result-label {fontMono}">Better target</span>
+																	<p class="result-strong {fontBody}">{result.better_target}</p>
+																</div>
+															</div>
+															<p class="result-copy {fontBody}">{result.why_it_matters}</p>
+															<div class="result-action">
+																<span class="result-label {fontMono}">Next</span>
+																<p class="result-strong {fontBody}">Press ✕ Doubt this below to argue with the verdict, or start a new scan.</p>
+															</div>
+														{:else if blepMsg.result.mode === 'RECOMMENDATION'}
+															{@const result = blepMsg.result as RecommendationResult}
+															<header class="result-header">
+																<h2 class="result-title {fontDisplay}">{result.title}</h2>
+																<span class="result-badge {fontDisplay} verdict-approved"
+																	>RECOMMENDATION</span
+																>
+															</header>
+															<div class="result-grid">
+																<div>
+																	<span class="result-label {fontMono}">Buy target</span>
+																	<ul class="result-list {fontBody}">
+																		{#each result.buy_target.slice(0, 4) as item (item)}
+																			<li>{item}</li>
+																		{/each}
+																	</ul>
+																</div>
+																<div>
+																	<span class="result-label {fontMono}">Avoid</span>
+																	<ul class="result-list {fontBody}">
+																		{#each result.avoid.slice(0, 3) as trap (trap.pattern)}
+																			<li><strong>{trap.pattern}</strong>: {trap.reason}</li>
+																		{/each}
+																	</ul>
+																</div>
+															</div>
+															<div class="result-action">
+																<span class="result-label {fontMono}">Next</span>
+																<p class="result-strong {fontBody}">Press ✕ Doubt this to ask questions, or scan a specific listing for final judgment.</p>
+															</div>
+															{#if result.shop_links && result.shop_links.length > 0}
+																<div class="shop-links-section">
+																	<span class="result-label {fontMono}">Go shopping</span>
+																	<div class="shop-links-grid">
+																		{#each result.shop_links as link (link.url)}
+																			<a
+																				href={link.url}
+																				target="_blank"
+																				rel="noopener noreferrer"
+																				class="shop-link {fontBody}"
+																			>
+																				{link.label} ↗
+																			</a>
+																		{/each}
+																	</div>
+																</div>
+															{/if}
+														{:else}
+															{@const result = blepMsg.result as ComparisonResult}
+															{@const compBadgeLabel = result.badge === 'BOTH_BAD' ? 'BOTH BAD' : result.badge === 'CLOSE_CALL' ? 'CLOSE CALL' : result.badge === 'CLEAR_WIN' ? 'CLEAR WIN' : result.badge.replace(/_/g, ' ')}
+															<header class="result-header">
+																<h2 class="result-title {fontDisplay}">{result.title}</h2>
+																<span class="result-badge {fontDisplay} {verdictColor(result.badge)}"
+																	>{compBadgeLabel}</span
+																>
+															</header>
+															<p class="result-copy {fontBody}">{result.summary}</p>
+															<div class="compare-grid">
+																{#each result.compared as item (item.name)}
+																	<div class="compare-col">
+																		<h3 class="compare-name {fontDisplay}">{item.name}</h3>
+																		<ul class="result-list {fontBody}">
+																			{#each item.points as point (point)}
+																				<li>{point}</li>
+																			{/each}
+																		</ul>
+																	</div>
+																{/each}
+															</div>
+															<div class="result-action winner">
+																<span class="result-label {fontMono}">Winner</span>
+																<p class="result-strong {fontBody}">{result.winner_row}</p>
+															</div>
+														{/if}
+													</div>
+
+													{#if blepMsg.phase1Json && blepMsg.result}
+														<FollowUpChat
+															{doubtMessages}
+															isLoading={doubtLoading}
+															errorMsg={doubtError}
+															{showRescanCta}
+															turnCount={doubtTurnCount}
+															maxTurns={MAX_DOUBT_TURNS}
+															isDoubtActive={composerMode === 'doubt'}
+															onDoubtClick={enterDoubtMode}
+															onRescan={() => {
+																const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
+																const contextQuery = lastUserMsg?.content ?? lastScanQuery ?? '';
+																exitDoubtMode();
+																draftInput = contextQuery;
+																requestAnimationFrame(() => textareaEl?.focus());
+															}}
+														/>
+													{/if}
+												{/if}
+											{/if}
+										</div>
+									{/if}
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</section>
+
+				{#if mode !== 'idle'}
+					<footer class="composer-dock">
+						{@render Composer()}
+					</footer>
 				{/if}
-			</div>
-		</section>
+			</main>
 
-		{#if mode !== 'idle'}
-			<footer class="composer-dock">
-				{@render Composer()}
-			</footer>
-		{/if}
-	</main>
-
-	{#if activityOpen}
-		<aside
-			id="activity-panel"
-			class="activity-panel"
-			aria-label="Activity log"
-			transition:fly={{ x: 28, duration: 180 }}
-		>
-			{@render ActivityLog()}
-		</aside>
-	{/if}
+			{#if activityOpen}
+				<aside
+					id="activity-panel"
+					class="activity-panel"
+					aria-label="Activity log"
+					transition:fly={{ x: 28, duration: 180 }}
+				>
+					{@render ActivityLog()}
+				</aside>
+			{/if}
 </div>
 
 <style>
@@ -1641,6 +1980,69 @@
 		line-height: 1;
 	}
 
+	.sidebar-user {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 14px 12px;
+		border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+		margin-bottom: 4px;
+	}
+
+	.sidebar-avatar {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.sidebar-avatar-fallback {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		background: var(--color-ink);
+		color: var(--color-paper);
+		display: inline-grid;
+		place-items: center;
+		font-size: 12px;
+		font-weight: 900;
+		flex-shrink: 0;
+	}
+
+	.sidebar-user-info {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		min-width: 0;
+	}
+
+	.sidebar-user-name {
+		font-size: 12px;
+		font-weight: 700;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		color: var(--color-ink);
+	}
+
+	.sidebar-logout {
+		border: 0;
+		background: transparent;
+		color: rgba(17, 17, 17, 0.4);
+		font-size: 9px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		cursor: pointer;
+		padding: 0;
+		text-align: left;
+	}
+
+	.sidebar-logout:hover {
+		color: var(--color-ink);
+	}
+
 	.sidebar-new {
 		width: calc(100% - 28px);
 		min-height: 44px;
@@ -1703,8 +2105,24 @@
 		gap: 0;
 	}
 
+	.sidebar-header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 14px;
+		width: 100%;
+		max-height: 30px;
+		transition: max-height 180ms ease;
+	}
+
+	.sidebar.collapsed .sidebar-header-row {
+		max-height: 0;
+		overflow: hidden;
+		pointer-events: none;
+	}
+
 	.sidebar-label {
-		padding: 8px 16px;
+		padding: 8px 2px;
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.12em;
@@ -1712,16 +2130,25 @@
 		color: rgba(17, 17, 17, 0.42);
 		max-height: 30px;
 		overflow: hidden;
-		transition:
-			max-height 180ms ease,
-			padding 180ms ease;
 	}
 
-	.sidebar.collapsed .sidebar-label {
-		max-height: 0;
-		padding-top: 0;
-		padding-bottom: 0;
-		pointer-events: none;
+	.sidebar-archive-toggle {
+		border: 0;
+		background: transparent;
+		color: rgba(17, 17, 17, 0.42);
+		font-size: 9px;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		cursor: pointer;
+		padding: 4px 6px;
+		margin-top: 2px;
+		transition: color 120ms ease, background 120ms ease;
+	}
+
+	.sidebar-archive-toggle:hover {
+		color: var(--color-ink);
+		background: rgba(17, 17, 17, 0.06);
 	}
 
 	.sidebar-history {
@@ -1731,6 +2158,8 @@
 		overflow-y: auto;
 		width: 100%;
 		transition: padding 180ms ease;
+		flex: 1 1 0%;
+		min-height: 0;
 	}
 
 	.sidebar.collapsed .sidebar-history {
@@ -1833,6 +2262,155 @@
 		letter-spacing: 0.06em;
 	}
 
+	/* ── History actions: pin / archive / delete ── */
+	.sidebar-history-li {
+		position: relative;
+		display: flex;
+		align-items: stretch;
+	}
+
+	.sidebar-history-li .sidebar-history-item {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.sidebar-history-li.is-pinned {
+		border-left: 2px solid var(--color-ink);
+	}
+
+	.pin-icon {
+		width: 12px;
+		height: 12px;
+		margin-top: 4px;
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-ink);
+		transition:
+			width 180ms ease,
+			height 180ms ease,
+			margin 180ms ease;
+	}
+
+	.pin-icon :global(svg) {
+		width: 12px;
+		height: 12px;
+		display: block;
+		transition:
+			width 180ms ease,
+			height 180ms ease;
+	}
+
+	.sidebar.collapsed .pin-icon {
+		width: 16px;
+		height: 16px;
+		margin: 0;
+	}
+
+	.sidebar.collapsed .pin-icon :global(svg) {
+		width: 16px;
+		height: 16px;
+	}
+
+	.history-actions-wrap {
+		position: relative;
+		flex: 0 0 auto;
+		display: flex;
+		align-items: flex-start;
+		opacity: 0;
+		transition: opacity 120ms ease;
+	}
+
+	.sidebar-history-li:hover .history-actions-wrap,
+	.sidebar-history-li:focus-within .history-actions-wrap,
+	.history-actions-wrap:has(.history-context-menu) {
+		opacity: 1;
+	}
+
+	.history-menu-btn {
+		width: 28px;
+		height: 28px;
+		margin-top: 8px;
+		border: 0;
+		background: transparent;
+		color: var(--color-ink);
+		font-size: 16px;
+		font-weight: 900;
+		cursor: pointer;
+		display: inline-grid;
+		place-items: center;
+		opacity: 0.4;
+		transition: opacity 100ms ease, background 100ms ease;
+	}
+
+	.history-menu-btn:hover {
+		opacity: 1;
+		background: rgba(17, 17, 17, 0.08);
+	}
+
+	.history-context-menu {
+		position: absolute;
+		top: 100%;
+		right: 0;
+		z-index: 80;
+		min-width: 140px;
+		background: var(--color-paper);
+		border: 1.5px solid var(--color-ink);
+		box-shadow: 3px 3px 0 rgba(17, 17, 17, 0.12);
+		display: flex;
+		flex-direction: column;
+		padding: 4px 0;
+	}
+
+	.ctx-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		border: 0;
+		background: transparent;
+		color: var(--color-ink);
+		font-size: 12.5px;
+		font-weight: 600;
+		padding: 7px 12px;
+		cursor: pointer;
+		text-align: left;
+		white-space: nowrap;
+	}
+
+	.ctx-item:hover {
+		background: rgba(17, 17, 17, 0.06);
+	}
+
+	.ctx-item.ctx-delete {
+		color: #b91c1c;
+	}
+
+	.ctx-item.ctx-delete:hover {
+		background: rgba(185, 28, 28, 0.08);
+	}
+
+	.ctx-icon {
+		width: 14px;
+		height: 14px;
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: currentColor;
+	}
+
+	.ctx-icon :global(svg) {
+		width: 14px;
+		height: 14px;
+		display: block;
+	}
+
+	.sidebar.collapsed .history-actions-wrap {
+		display: none;
+	}
+
 	.main-column {
 		min-width: 0;
 		min-height: 0;
@@ -1923,7 +2501,9 @@
 		opacity: 0;
 		visibility: hidden;
 		pointer-events: none;
-		transition: opacity 150ms ease, visibility 150ms ease;
+		transition:
+			opacity 150ms ease,
+			visibility 150ms ease;
 		z-index: 50;
 		text-transform: none;
 		letter-spacing: normal;
@@ -2050,6 +2630,18 @@
 	.msg-blep-content {
 		margin: 0;
 		white-space: pre-wrap;
+		word-break: break-word;
+	}
+
+	:global(.chat-link) {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		word-break: break-all;
+	}
+
+	:global(.chat-link:hover) {
+		opacity: 0.7;
 	}
 
 	.msg-blep-block {
@@ -2156,6 +2748,39 @@
 	.result-action.winner {
 		background: var(--color-mint);
 		border-color: var(--color-ink);
+	}
+
+	.shop-links-section {
+		margin-top: 12px;
+		padding: 12px;
+		border: 1px solid rgba(17, 17, 17, 0.12);
+		background: var(--color-paper);
+	}
+
+	.shop-links-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 8px;
+	}
+
+	.shop-link {
+		display: inline-block;
+		padding: 6px 14px;
+		border: 1.5px solid var(--color-ink);
+		background: transparent;
+		color: var(--color-ink);
+		font-size: 0.8rem;
+		font-weight: 700;
+		text-decoration: none;
+		transition:
+			background 120ms ease,
+			color 120ms ease;
+	}
+
+	.shop-link:hover {
+		background: var(--color-ink);
+		color: var(--color-paper);
 	}
 
 	.compare-name {
@@ -2629,10 +3254,16 @@
 			padding: 10px 0;
 		}
 
-		.history-dot {
+		.history-dot,
+		.pin-icon {
 			width: 16px;
 			height: 16px;
 			margin: 0;
+		}
+
+		.pin-icon :global(svg) {
+			width: 16px;
+			height: 16px;
 		}
 
 		.activity-panel {

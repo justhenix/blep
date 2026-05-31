@@ -93,9 +93,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const parsed = chatRequestSchema.safeParse(body);
 
 	if (!parsed.success) {
-		const paths = parsed.error.issues
-			.map((i) => i.path.join('.') || 'body')
-			.slice(0, 5);
+		const paths = parsed.error.issues.map((i) => i.path.join('.') || 'body').slice(0, 5);
 		console.warn(`[blep chat] bad_input paths=${JSON.stringify(paths)}`);
 
 		return json({ ok: false, error: 'bad_input' } satisfies Phase2ErrorResponse, { status: 400 });
@@ -119,14 +117,12 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		return json(response);
 	} catch (error) {
-		const errorName = error && typeof error === 'object' && 'name' in error
-			? String((error as { name: unknown }).name)
-			: 'unknown';
+		const errorName =
+			error && typeof error === 'object' && 'name' in error
+				? String((error as { name: unknown }).name)
+				: 'unknown';
 		console.warn(`[blep chat] gemini_error name=${errorName}`);
 
-		return json(
-			{ ok: false, error: 'chat_failed' } satisfies Phase2ErrorResponse,
-			{ status: 502 }
-		);
+		return json({ ok: false, error: 'chat_failed' } satisfies Phase2ErrorResponse, { status: 502 });
 	}
 };

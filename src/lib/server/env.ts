@@ -17,7 +17,7 @@ export const blepEnv = {
 	firecrawlApiKey: env.FIRECRAWL_API_KEY,
 	firebaseProjectId: env.FIREBASE_PROJECT_ID,
 	googleApplicationCredentials: env.GOOGLE_APPLICATION_CREDENTIALS,
-	dailyLimit: parsePositiveInt(env.BLEP_DAILY_LIMIT, 2),
+	dailyLimit: parsePositiveInt(env.BLEP_DAILY_LIMIT, 3),
 	useMock: env.BLEP_USE_MOCK === 'true',
 	demoMode: env.BLEP_DEMO_MODE === 'true',
 	geminiModelMain: env.GEMINI_MODEL_MAIN ?? 'gemini-3.1-flash-lite',

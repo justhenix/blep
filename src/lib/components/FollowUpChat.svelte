@@ -69,11 +69,7 @@
 	<!-- Trigger button — always visible when result exists -->
 	{#if !isDoubtActive}
 		<div class="doubt-trigger-row">
-			<button
-				type="button"
-				class="doubt-trigger btnSecondary"
-				onclick={onDoubtClick}
-			>
+			<button type="button" class="doubt-trigger btnSecondary" onclick={onDoubtClick}>
 				<span class="doubt-x" aria-hidden="true">✕</span>
 				Doubt this
 			</button>
@@ -121,9 +117,7 @@
 	{/if}
 
 	{#if isDoubtActive && turnCount >= maxTurns}
-		<div class="doubt-closed font-mono-ui">
-			Doubt room closed. Run new scan if listing changed.
-		</div>
+		<div class="doubt-closed font-mono-ui">Doubt room closed. Run new scan if listing changed.</div>
 	{/if}
 
 	{#if isDoubtActive && doubtMessages.length > 0 && turnCount < maxTurns}

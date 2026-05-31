@@ -143,7 +143,7 @@ const uniqueSources = (sources: BlepSource[]) => {
 const scrapeUrl = async (url: string): Promise<BlepSource | null> => {
 	const result = await firecrawlPost('/scrape', {
 		url,
-		formats: [{ type: 'markdown' }]
+		formats: ['markdown']
 	});
 
 	return normalizeSource(extractItems(result)[0]);
@@ -156,7 +156,7 @@ const searchQuery = async (query: string, limit: number): Promise<BlepSource[]> 
 		query: `${query} specs review forum known issues price`,
 		limit,
 		scrapeOptions: {
-			formats: [{ type: 'markdown' }]
+			formats: ['markdown']
 		}
 	});
 

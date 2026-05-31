@@ -15,7 +15,7 @@
 			const originalScrollBehavior = document.documentElement.style.scrollBehavior;
 			document.documentElement.style.scrollBehavior = 'auto'; // Disable smooth scroll
 			window.scrollTo(0, 0);
-			
+
 			// Restore original scroll behavior after the jump
 			setTimeout(() => {
 				document.documentElement.style.scrollBehavior = originalScrollBehavior;

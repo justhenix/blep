@@ -458,7 +458,10 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 	const specScore = specHits * 2 + (specHits >= 2 ? 1 : 0);
 	const hardwareScore = directHardwareScore + brandScore + platformScore + modelScore;
 	const buyingScore = countTermScore(normalized, BUYING_INTENT_PATTERNS, 2);
-	const workloadScore = (hardwareScore > 0 || brandScore > 0 || buyingScore > 0) ? countTermScore(normalized, WORKLOAD_PATTERNS, 1) : 0;
+	const workloadScore =
+		hardwareScore > 0 || brandScore > 0 || buyingScore > 0
+			? countTermScore(normalized, WORKLOAD_PATTERNS, 1)
+			: 0;
 	const urlScore = scoreUrls(normalized, urls);
 	const score = hardwareScore + specScore + buyingScore + workloadScore + urlScore.score;
 	const hasHardwareEvidence = hardwareScore + specScore > 0;
@@ -499,7 +502,7 @@ export function classifyScanInput(query: string, urls: string[] = []): ScanInput
 		// Casual queries: brand/product + any buying signal
 		(brandScore >= 3 && buyingScore >= 2) ||
 		// Budget + buying intent (e.g. "15 jutaan rekomendasi")
-		(buyingScore >= 4)
+		buyingScore >= 4
 	) {
 		return allowed(
 			urlScore.hasTechUrl && hardwareScore === 0 ? 'tech_listing_url' : 'tech_hardware',

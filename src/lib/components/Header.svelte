@@ -40,9 +40,12 @@
 		</div>
 
 		<div class="flex items-center gap-4">
-			<button class="focus-visible-ring font-display text-sm font-semibold text-ink/70 hover:text-ink disabled:opacity-50" disabled>
+			<a
+				class="focus-visible-ring font-display text-sm font-semibold text-ink/70 hover:text-ink"
+				href="/app"
+			>
 				Log in
-			</button>
+			</a>
 			<a
 				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
 				href="/app"
