@@ -74,9 +74,14 @@ const safeSourceList = (raw: unknown): { title: string; url: string }[] => {
 
 export const lookupCache = async ({ query, urls }: CacheKeyInput): Promise<CacheLookupResult> => {
 	const { cacheKey } = buildCacheKey({ query, urls });
+	const db = getFirebaseDb();
+
+	if (!db) {
+		console.warn('[blep cache] Firebase unavailable — cache bypassed');
+		return { hit: false, cacheKey };
+	}
 
 	try {
-		const db = getFirebaseDb();
 		const doc = db.collection('scan_cache').doc(cacheKey);
 		const snap = await doc.get();
 
@@ -116,9 +121,14 @@ export const storeCache = async (
 	sources: { title: string; url: string }[]
 ) => {
 	const { cacheKey, queryHash, urlsHash } = buildCacheKey(input);
+	const db = getFirebaseDb();
+
+	if (!db) {
+		console.warn('[blep cache] Firebase unavailable — cache store skipped');
+		return cacheKey;
+	}
 
 	try {
-		const db = getFirebaseDb();
 		const doc = db.collection('scan_cache').doc(cacheKey);
 		const expiresAt = Timestamp.fromMillis(Date.now() + cacheTtlMs());
 

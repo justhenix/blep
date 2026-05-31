@@ -17,7 +17,7 @@ export const blepEnv = {
 	firecrawlApiKey: env.FIRECRAWL_API_KEY,
 	firebaseProjectId: env.FIREBASE_PROJECT_ID,
 	googleApplicationCredentials: env.GOOGLE_APPLICATION_CREDENTIALS,
-	dailyLimit: parsePositiveInt(env.BLEP_DAILY_LIMIT, 2),
+	dailyLimit: parsePositiveInt(env.BLEP_DAILY_LIMIT, 3),
 	useMock: env.BLEP_USE_MOCK === 'true',
 	demoMode: env.BLEP_DEMO_MODE === 'true',
 	geminiModelMain: env.GEMINI_MODEL_MAIN ?? 'gemini-3.1-flash-lite',
@@ -29,3 +29,32 @@ export const blepEnv = {
 	cacheTtlHours: parsePositiveInt(env.BLEP_CACHE_TTL_HOURS, 24),
 	promptVersion: env.BLEP_PROMPT_VERSION ?? 'v1'
 } as const;
+
+/**
+ * Whether Firebase Admin credentials are available.
+ * When false, quota/cache/abuse checks are bypassed gracefully.
+ */
+export const firebaseAvailable = Boolean(
+	blepEnv.firebaseProjectId || blepEnv.googleApplicationCredentials
+);
+
+/**
+ * Validate that required API keys exist for live mode.
+ * Returns list of missing keys. Empty list = all good.
+ */
+export const validateLiveEnv = (): string[] => {
+	if (blepEnv.useMock) return [];
+
+	const missing: string[] = [];
+
+	if (!blepEnv.geminiApiKey) missing.push('GEMINI_API_KEY');
+	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
+
+	if (!firebaseAvailable) {
+		console.warn(
+			'[blep env] Firebase credentials missing — quota/cache/abuse bypassed in live mode'
+		);
+	}
+
+	return missing;
+};

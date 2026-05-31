@@ -4,13 +4,12 @@
 	type NavLink = {
 		label: string;
 		href: string;
-		index: '01' | '02' | '03';
 	};
 
 	const navLinks: NavLink[] = [
-		{ index: '01', label: 'How it works', href: '#how-it-works' },
-		{ index: '02', label: 'Demo', href: '#demo' },
-		{ index: '03', label: 'Why BLEP', href: '#why-blep' }
+		{ label: 'Home', href: '#top' },
+		{ label: 'Flow', href: '#flow' },
+		{ label: 'FAQ', href: '#faq' }
 	];
 
 	const toLandingHref = (href: string) => (page.route.id === '/' ? href : `/${href}`);
@@ -33,7 +32,6 @@
 				{#each navLinks as link (link.label)}
 					<li>
 						<a class="nav-link focus-visible-ring" href={toLandingHref(link.href)}>
-							<span class="nav-link__index">{link.index}</span>
 							<span>{link.label}</span>
 						</a>
 					</li>
@@ -41,12 +39,20 @@
 			</ul>
 		</div>
 
-		<a
-			class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
-			href="/app"
-		>
-			Ask BLEP
-		</a>
+		<div class="flex items-center gap-4">
+			<a
+				class="focus-visible-ring font-display text-sm font-semibold text-ink/70 hover:text-ink"
+				href="/app"
+			>
+				Log in
+			</a>
+			<a
+				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+				href="/app"
+			>
+				Ask BLEP
+			</a>
+		</div>
 	</nav>
 </header>
 
@@ -63,15 +69,6 @@
 		text-decoration: underline;
 		text-decoration-thickness: 0.075em;
 		text-underline-offset: 0.16em;
-	}
-
-	.nav-link__index {
-		font-family: var(--font-mono);
-		font-size: 0.66rem;
-		font-weight: 700;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		opacity: 0.7;
 	}
 
 	.nav-link:hover,

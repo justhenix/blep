@@ -22,7 +22,11 @@ import type {
 } from '$lib/blep/types';
 import { blepEnv } from './env';
 
-export type GeminiFailureCode = 'gemini_failed' | 'schema_failed';
+export type GeminiFailureCode =
+	| 'gemini_failed'
+	| 'json_parse_failed'
+	| 'zod_failed'
+	| 'schema_failed';
 
 class GeminiVerdictError extends Error {
 	constructor(
@@ -222,7 +226,7 @@ const extractJsonText = (text: string) => {
 	const lastBrace = stripped.lastIndexOf('}');
 
 	if (firstBrace < 0 || lastBrace <= firstBrace) {
-		throw new GeminiVerdictError('schema_failed', 'parse');
+		throw new GeminiVerdictError('json_parse_failed', 'parse');
 	}
 
 	return stripped.slice(firstBrace, lastBrace + 1);
@@ -233,7 +237,7 @@ const assertEvidenceFromSources = (evidence: { url: string }[], sources: BlepSou
 
 	for (const item of evidence) {
 		if (!sourceUrls.has(item.url)) {
-			throw new GeminiVerdictError('schema_failed', 'schema');
+			throw new GeminiVerdictError('zod_failed', 'schema');
 		}
 	}
 };
@@ -253,7 +257,7 @@ const parseWith = <T extends BlepPhase1Output>(
 	return (raw: unknown, sources: BlepSource[]): T => {
 		const result = zodParse(raw);
 		if (!result.success) {
-			throw new GeminiVerdictError('schema_failed', 'schema');
+			throw new GeminiVerdictError('zod_failed', 'schema');
 		}
 
 		assertEvidenceFromSources(getEvidence(result.data), sources);
@@ -305,7 +309,7 @@ const parseModelText = <T extends BlepPhase1Output>(
 	try {
 		parsed = JSON.parse(extractJsonText(text));
 	} catch {
-		throw new GeminiVerdictError('schema_failed', 'parse');
+		throw new GeminiVerdictError('json_parse_failed', 'parse');
 	}
 
 	return config.parse(parsed, sources);
@@ -414,6 +418,39 @@ export const generatePhase1 = async (
 		default:
 			return runWithFallback(verdictConfig, query, sources, intent);
 	}
+};
+
+/**
+ * Phase 2 — simple single-turn Gemini call for follow-up chat.
+ * No response schema enforcement. Returns raw text.
+ * Uses cheapest model (geminiModelMain).
+ */
+export const generatePhase2Chat = async (
+	systemPrompt: string,
+	userContent: string
+): Promise<string> => {
+	const ai = getClient();
+	const model = blepEnv.geminiModelMain;
+
+	const response = await ai.models.generateContent({
+		model,
+		contents: userContent,
+		config: {
+			systemInstruction: systemPrompt,
+			temperature: 0.3,
+			candidateCount: 1,
+			maxOutputTokens: 600
+		}
+	});
+
+	const text = response.text;
+	if (!text) {
+		throw new GeminiVerdictError('gemini_failed', 'call');
+	}
+
+	console.info(`[blep gemini] phase2 model=${model} call=ok`);
+
+	return text;
 };
 
 export const getGeminiErrorCode = (error: unknown): GeminiFailureCode =>

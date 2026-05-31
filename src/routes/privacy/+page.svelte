@@ -2,10 +2,10 @@
 	<title>Privacy | BLEP</title>
 </svelte:head>
 
-<main class="flex-grow px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+<main class="grow px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
 	<article class="mx-auto w-full max-w-3xl min-w-0">
 		<header class="mb-16 border-b border-ink/15 pb-8">
-			<p class="mb-4 font-mono text-xs font-bold tracking-[0.1em] text-ink/50 uppercase">
+			<p class="mb-4 font-mono text-xs font-bold tracking-widest text-ink/50 uppercase">
 				BLEP PRIVACY
 			</p>
 			<h1 class="font-display text-4xl leading-tight font-bold sm:text-5xl">Privacy Policy</h1>

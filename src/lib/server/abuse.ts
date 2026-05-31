@@ -34,8 +34,13 @@ export const checkAndRecordAbuse = async (identityHash: string): Promise<AbuseCh
 	const limit = blepEnv.abuseDailyLimit;
 	const cooldownMs = blepEnv.cooldownSeconds * 1000;
 
+	const db = getFirebaseDb();
+	if (!db) {
+		console.warn('[blep abuse] Firebase unavailable — abuse check bypassed');
+		return { allowed: true, remaining: limit, limit };
+	}
+
 	try {
-		const db = getFirebaseDb();
 		const doc = db.collection('abuse').doc(docId(identityHash));
 
 		return await db.runTransaction(async (tx) => {
