@@ -228,16 +228,16 @@
 					Approved / Caution / Waste
 				</p>
 
-				<div class="mt-8 flex flex-wrap items-center gap-3">
+				<div id="demo" class="mt-8 flex scroll-mt-24 flex-wrap items-center gap-3">
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
-						href="#demo"
+						href="/app"
 					>
 						Ask BLEP
 					</a>
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
-						href="#demo"
+						href="/app"
 					>
 						Compare laptops
 					</a>
@@ -377,7 +377,10 @@
 		</div>
 	</section>
 
-	<section id="how" class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+	<section
+		id="how-it-works"
+		class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+	>
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-16 text-center">
 				<h2 class="font-display text-4xl font-bold sm:text-5xl">How it works</h2>
@@ -421,7 +424,7 @@
 	</section>
 
 	<!-- ═══════════════ FAQ ═══════════════ -->
-	<section id="faq" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+	<section id="why-blep" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="grid gap-12 lg:grid-cols-[1fr_1.5fr] lg:gap-16">
 				<!-- Left Column -->
