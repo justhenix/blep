@@ -7,9 +7,9 @@
 	};
 
 	const navLinks: NavLink[] = [
-		{ label: 'How it works', href: '#how-it-works' },
-		{ label: 'Demo', href: '#demo' },
-		{ label: 'Why BLEP', href: '#why-blep' }
+		{ label: 'Home', href: '#top' },
+		{ label: 'Flow', href: '#flow' },
+		{ label: 'FAQ', href: '#faq' }
 	];
 
 	const toLandingHref = (href: string) => (page.route.id === '/' ? href : `/${href}`);
@@ -39,12 +39,17 @@
 			</ul>
 		</div>
 
-		<a
-			class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
-			href="/app"
-		>
-			Ask BLEP
-		</a>
+		<div class="flex items-center gap-4">
+			<button class="focus-visible-ring font-display text-sm font-semibold text-ink/70 hover:text-ink disabled:opacity-50" disabled>
+				Log in
+			</button>
+			<a
+				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+				href="/app"
+			>
+				Ask BLEP
+			</a>
+		</div>
 	</nav>
 </header>
 

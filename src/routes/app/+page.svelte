@@ -1,112 +1,114 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { fade, fly, slide } from 'svelte/transition';
+	import { onMount, tick } from 'svelte';
+	import { fade, fly } from 'svelte/transition';
 
-	// ─── Types ───────────────────────────────────────────────────────────
-	type ToolStatus = 'queued' | 'running' | 'done';
-	type AppMode = 'idle' | 'running' | 'done' | 'error';
+	type Mode = 'idle' | 'running' | 'done';
+	type Intent = 'verdict' | 'recommendation' | 'comparison';
+	type SidebarActiveView = 'new_scan' | 'history';
+
+	type ChatMessage = {
+		id?: string;
+		role: 'user' | 'blep';
+		content: string;
+		timestamp: number;
+		status?: 'loading' | 'done' | 'error';
+		result?: MockResult | null;
+	};
+
+	let { data } = $props();
 
 	type ToolStep = {
 		id: string;
 		name: string;
 		label: string;
-		status: ToolStatus;
+		status: 'queued' | 'running' | 'done';
 		output?: string;
-	};
-
-	type ChatMessage = {
-		role: 'user' | 'blep';
-		content: string;
-		timestamp: number;
 	};
 
 	type VerdictResult = {
 		mode: 'VERDICT';
-		name: string;
-		verdict: 'APPROVED' | 'CAUTION' | 'WASTE';
+		title: string;
+		badge: string;
 		fatal_flaw: string;
-		landfill_year: number;
-		roast: string;
-		summary: string;
-		better_target?: string;
-		confidence: string;
-		specs: {
-			upgradeable: boolean;
-			thermal: string;
-			forum_score: number;
-		};
-		evidence: { title: string; url: string; quote_or_fact: string; relevance: string }[];
+		why_it_matters: string;
+		better_target: string;
+		next_action: string;
 	};
 
 	type RecommendationResult = {
 		mode: 'RECOMMENDATION';
-		query: string;
-		parsed_need: {
-			category: string;
-			use_case: string;
-			budget_idr: number | null;
-			market: string;
-		};
-		recommendation_summary: string;
-		target_specs: Record<string, string>;
-		picks: {
-			label: string;
-			name: string;
-			expected_price_idr: number | null;
-			why: string;
-			caveat: string;
-		}[];
+		title: string;
+		summary: string;
+		buy_target: string[];
 		avoid: { pattern: string; reason: string }[];
 		deal_rules: string[];
-		confidence: string;
 		next_action: string;
 	};
 
 	type ComparisonResult = {
 		mode: 'COMPARISON';
-		query: string;
-		winner: string;
-		loser: string;
-		verdict: 'CLEAR_WIN' | 'CLOSE_CALL' | 'BOTH_BAD';
-		reason: string;
-		compared: {
-			name: string;
-			price_idr: number | null;
-			strengths: string[];
-			flaws: string[];
-			verdict: 'APPROVED' | 'CAUTION' | 'WASTE';
-		}[];
-		confidence: string;
+		title: string;
+		badge: string;
+		summary: string;
+		compared: { name: string; points: string[] }[];
+		winner_row: string;
+		next_action: string;
 	};
 
-	type ScanResult = VerdictResult | RecommendationResult | ComparisonResult;
+	type MockResult = VerdictResult | RecommendationResult | ComparisonResult;
 
 	type HistoryEntry = {
 		id: string;
 		query: string;
-		verdict?: string;
+		verdict: 'APPROVED' | 'WASTE' | 'RECOMMENDATION';
 		timestamp: number;
 	};
 
 	type PromptCard = {
-		title: string;
-		text: string;
+		label: string;
+		placeholder: string;
 		sample: string;
+		intent: Intent;
 	};
 
-	// ─── State ───────────────────────────────────────────────────────────
-	let mode: AppMode = $state('idle');
-	let input = $state('');
-	let messages: ChatMessage[] = $state([]);
-	let toolSteps: ToolStep[] = $state([]);
-	let scanResult: ScanResult | null = $state(null);
-	let sidebarOpen = $state(false);
-	let thinkingOpen = $state(false);
-	let textareaEl = $state<HTMLTextAreaElement | null>(null);
-	let mainEl = $state<HTMLElement | null>(null);
-	let brainJuice = $state(2);
+	const fontDisplay = 'font-display';
+	const fontBody = 'font-body';
+	const fontMono = 'font-mono-ui';
 
-	const history: HistoryEntry[] = $state([
+	let mode = $state<Mode>('idle');
+	let draftInput = $state('');
+	let selectedMode = $state<Intent | null>(null);
+	let messages = $state<ChatMessage[]>([]);
+	let toolSteps = $state<ToolStep[]>([]);
+	let brainJuice = $state(3);
+
+	let now = $state(new Date());
+
+	const tooltipText = $derived.by(() => {
+		if (brainJuice >= 3) {
+			return 'quota full';
+		}
+		const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+		const diffMs = midnight.getTime() - now.getTime();
+		const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+		const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+		if (diffHrs > 0) {
+			return `resets in ${diffHrs}h ${diffMins}m`;
+		}
+		return `resets in ${diffMins}m`;
+	});
+	let activeHistoryId = $state<string | null>(null);
+	let activeSidebarView = $state<SidebarActiveView>('new_scan');
+	let elapsedSeconds = $state(0);
+	let sidebarExpanded = $state(true);
+	let isMobileRail = $state(false);
+	let activityOpen = $state(false);
+
+	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+	let chatViewportEl = $state<HTMLElement | null>(null);
+	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+	const history: HistoryEntry[] = [
 		{
 			id: '1',
 			query: 'Lenovo LOQ RTX 4050 14 juta',
@@ -125,320 +127,467 @@
 			verdict: 'RECOMMENDATION',
 			timestamp: Date.now() - 259200000
 		}
-	]);
+	];
 
 	const promptCards: PromptCard[] = [
 		{
-			title: 'Judge a listing',
-			text: 'Paste marketplace text or URL.',
-			sample: 'Acer Swift Go 14 Ultra 7, 32GB RAM, 1TB SSD, 19 juta. Worth it?'
+			label: 'Listing',
+			placeholder: 'Paste laptop link, specs, or ask “gaming laptop 15 juta”',
+			sample: 'Acer Swift Go 14 Ultra 7, 32GB RAM, 1TB SSD, 19 juta. Worth it?',
+			intent: 'verdict'
 		},
 		{
-			title: 'Find recommendation',
-			text: 'Budget + use case.',
-			sample: 'Recommend gaming laptop 15 juta in Indonesia.'
+			label: 'Recommend',
+			placeholder: 'Paste laptop link, specs, or ask “gaming laptop 15 juta”',
+			sample: 'Gaming laptop 15 juta recommendation',
+			intent: 'recommendation'
 		},
 		{
-			title: 'Compare',
-			text: 'Two options enter. One survives.',
-			sample: 'Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050, which one?'
+			label: 'Compare',
+			placeholder: 'Paste laptop link, specs, or ask “gaming laptop 15 juta”',
+			sample: 'Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050, which one?',
+			intent: 'comparison'
 		}
 	];
 
-	// ─── Mock Data ───────────────────────────────────────────────────────
-
-	const MOCK_TOOL_STEPS: Omit<ToolStep, 'status'>[] = [
-		{ id: 'intent', name: 'intent.detect', label: 'classifying request' },
-		{ id: 'market', name: 'market.search', label: 'checking current price bracket' },
-		{ id: 'spec', name: 'spec.extract', label: 'reading CPU, GPU, RAM, screen' },
-		{ id: 'complaint', name: 'complaint.scan', label: 'looking for heat, repair, forum complaints' },
-		{ id: 'alt', name: 'alternative.compare', label: 'checking better nearby options' },
-		{ id: 'verdict', name: 'verdict.render', label: 'building verdict card' }
+	const heroVariants = [
+		{
+			headline: 'BLEP saves your wallet.',
+			subhead: 'Paste a listing, compare picks, or ask for a budget target.'
+		},
+		{
+			headline: 'Stop buying overpriced junk.',
+			subhead: 'Paste a listing. BLEP checks if price makes sense.'
+		},
+		{
+			headline: 'Bad deals look good now.',
+			subhead: 'BLEP checks specs, price, and better options.'
+		},
+		{
+			headline: 'Ask first. Regret less.',
+			subhead: 'BLEP finds weak specs, fake value, and better targets.'
+		},
+		{
+			headline: 'Know before you buy.',
+			subhead: 'Drop a listing or budget. BLEP gives clean buying signal.'
+		},
 	];
+	let activeHero = $state(heroVariants[data.initialHeroIndex ?? 0]);
 
-	const BLEP_LOG_LINES = [
-		'[blep reading budget...]',
-		'[blep sniffing seller cope...]',
-		'[blep checking money saving devices...]',
-		'[blep scanning forum thoughts...]',
-		'[blep detecting bad spec...]',
-		'[blep comparing nearby damage...]',
-		'[blep counting future regret...]',
-		'[blep building verdict...]'
-	];
+	const modeByIntent = (intent: Intent | null) =>
+		promptCards.find((card) => card.intent === intent) ?? promptCards[0];
+
+	const TOOL_STEPS_BY_INTENT = {
+		verdict: [
+			{ id: 'intent', name: 'intent.detect', label: 'Classifying request' },
+			{ id: 'listing', name: 'listing.parse', label: 'Parsing listing details' },
+			{ id: 'market', name: 'market.search', label: 'Scanning local marketplace' },
+			{ id: 'spec', name: 'spec.extract', label: 'Extracting specifications' },
+			{ id: 'trap', name: 'trap.scan', label: 'Scanning for seller traps' },
+			{ id: 'verdict', name: 'verdict.render', label: 'Rendering final output' }
+		],
+		recommendation: [
+			{ id: 'intent', name: 'intent.detect', label: 'Classifying request' },
+			{ id: 'budget', name: 'budget.parse', label: 'Reading budget constraints' },
+			{ id: 'market', name: 'market.search', label: 'Scanning local marketplace' },
+			{ id: 'spec', name: 'spec.target', label: 'Finding acceptable hardware' },
+			{ id: 'trap', name: 'trap.scan', label: 'Looking for seller traps' },
+			{ id: 'verdict', name: 'verdict.render', label: 'Rendering final output' }
+		],
+		comparison: [
+			{ id: 'intent', name: 'intent.detect', label: 'Classifying request' },
+			{ id: 'option', name: 'option.parse', label: 'Parsing compared options' },
+			{ id: 'market', name: 'market.search', label: 'Scanning local marketplace' },
+			{ id: 'spec', name: 'spec.compare', label: 'Comparing specifications side-by-side' },
+			{ id: 'trap', name: 'trap.scan', label: 'Looking for traps' },
+			{ id: 'winner', name: 'winner.render', label: 'Rendering winner output' }
+		]
+	} as const;
+
+	const LOG_OUTPUTS_BY_INTENT = {
+		verdict: [
+			'Verdict scan request found',
+			'Parsed device name & listing details',
+			'Found comparable local options',
+			'Extracted spec sheet details',
+			'No direct listing traps detected',
+			'Verdict card complete'
+		],
+		recommendation: [
+			'Recommendation request found',
+			'Budget: 15 juta / market: Indonesia',
+			'Checking current price bracket',
+			'Targeting RTX 4050-class',
+			'Rejecting RTX 2050 and 8GB traps',
+			'Building recommendation panel'
+		],
+		comparison: [
+			'Comparison request found',
+			'Options: Lenovo LOQ and Acer Nitro V detected',
+			'Querying benchmark and pricing info',
+			'Chassis & thermal performance evaluated',
+			'RAM soldered warning checked',
+			'Comparison verdict card built'
+		]
+	} as const;
 
 	const MOCK_VERDICT: VerdictResult = {
 		mode: 'VERDICT',
-		name: 'Acer Swift Go 14 Ultra 7',
-		verdict: 'CAUTION',
+		title: 'Listing verdict',
+		badge: 'CAUTION / MOCK',
 		fatal_flaw: 'Good machine, but price must beat newer OLED/Ultra deals nearby.',
-		landfill_year: 2031,
-		roast:
-			'Solid internals wearing a premium sticker. The price has to justify itself against newer configs.',
-		summary:
-			'The Swift Go 14 is a capable ultrabook, but at 19 juta the buyer must confirm this config beats the latest Ultra 5/7 OLED deals in the same bracket.',
+		why_it_matters:
+			'Swift Go 14 is capable, but at 19 juta buyer must confirm this config beats latest Ultra 5/7 OLED deals in same bracket.',
 		better_target: 'Compare against Core Ultra 5/7 OLED configs under same budget.',
-		confidence: 'MOCK',
-		specs: {
-			upgradeable: false,
-			thermal: 'Fanless under light load, audible under sustained CPU work.',
-			forum_score: 7
-		},
-		evidence: [
-			{
-				title: 'Mock evidence (caution)',
-				url: 'https://example.com/blep/mock-evidence',
-				quote_or_fact: 'Mock mode active; no live web research was performed.',
-				relevance: 'Proves response shape and validation path before AI integration.'
-			}
-		]
+		next_action: 'Send listing link and BLEP will judge final pick.'
 	};
 
 	const MOCK_RECOMMENDATION: RecommendationResult = {
 		mode: 'RECOMMENDATION',
-		query: 'gaming laptop 15 juta',
-		parsed_need: {
-			category: 'laptop',
-			use_case: 'gaming',
-			budget_idr: 15000000,
-			market: 'Indonesia'
-		},
-		recommendation_summary:
-			'At 15 juta, target RTX 4050 class with 16GB RAM and 144Hz panel. Reject soldered 8GB and U-series CPUs wearing gaming stickers.',
-		target_specs: {
-			cpu: 'Ryzen 5 / Core i5 H-series (8 cores)',
-			gpu: 'RTX 4050 class minimum',
-			ram: '16GB dual-channel',
-			storage: '512GB NVMe SSD',
-			screen: '15.6" 144Hz IPS',
-			thermal: 'Dual-fan with acceptable sustained clocks',
-			upgradeability: 'Upgradeable RAM preferred'
-		},
-		picks: [
-			{
-				label: 'BEST_OVERALL',
-				name: 'RTX 4050 gaming laptop target',
-				expected_price_idr: null,
-				why: 'Hits the playable-modern-games bracket without overpaying for badge GPUs.',
-				caveat: 'Mock pick. Exact model depends on live listing evidence.'
-			},
-			{
-				label: 'CHEAPER_SAFE',
-				name: 'RTX 3050 laptop only if much cheaper',
-				expected_price_idr: null,
-				why: 'Acceptable when non-GPU value (panel, build, RAM) is strong.',
-				caveat: 'Only if the price gap is real, not marketing.'
-			},
-			{
-				label: 'STRETCH_PICK',
-				name: 'RTX 4060 deal if found near budget',
-				expected_price_idr: null,
-				why: 'Worth stretching only when price is close and cooling is not trash.',
-				caveat: 'Do not chase RTX 4060 if RAM, screen, or thermals are cut down.'
-			}
+		title: 'Recommendation target',
+		summary: 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.',
+		buy_target: [
+			'Ryzen 5 / Core i5 H-series',
+			'RTX 4050 class minimum',
+			'16GB dual-channel',
+			'512GB NVMe SSD',
+			'15.6" 144Hz IPS',
+			'Dual-fan cooling',
+			'Upgradeable RAM preferred'
 		],
 		avoid: [
 			{ pattern: 'RTX 2050 above 10-11 juta', reason: 'Old entry GPU wearing a gaming sticker.' },
-			{
-				pattern: 'GTX 1650 premium listings',
-				reason: 'Too old for this bracket unless brutally cheap.'
-			},
-			{
-				pattern: '8GB single-channel final config',
-				reason: 'Kills multitasking and cannot be fixed later.'
-			}
+			{ pattern: 'GTX 1650 premium listings', reason: 'Too old unless brutally cheap.' },
+			{ pattern: '8GB single-channel final config', reason: 'Kills multitasking and ages badly.' }
 		],
 		deal_rules: [
 			'Demand RTX 4050+ at this budget before paying.',
-			'Reject 8GB soldered RAM as a final config.',
-			'Check sustained thermals, not just peak benchmarks.'
+			'Reject 8GB soldered RAM as final config.',
+			'Check sustained thermals, not peak benchmarks.'
 		],
-		confidence: 'MOCK',
 		next_action: 'Send 2 listing links and BLEP will judge final pick.'
 	};
 
 	const MOCK_COMPARISON: ComparisonResult = {
 		mode: 'COMPARISON',
-		query: 'Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050',
-		winner: 'Lenovo LOQ RTX 4050',
-		loser: 'Acer Nitro V RTX 4050',
-		verdict: 'CLOSE_CALL',
-		reason:
-			'Both are competent RTX 4050 machines. Lenovo LOQ edges on thermals and build reputation. Acer Nitro V may win on price if discounted.',
+		title: 'Pick cleaner 4050 deal',
+		badge: 'MOCK COMPARISON',
+		summary:
+			'Lenovo LOQ usually wins if cooling, RAM, and price are sane. Nitro V can win only if cheaper with same RAM and warranty.',
 		compared: [
 			{
 				name: 'Lenovo LOQ RTX 4050',
-				price_idr: null,
-				strengths: ['Better sustained thermals', 'Stronger forum reputation'],
-				flaws: ['Higher asking price'],
-				verdict: 'APPROVED'
+				points: ['stronger chassis target', 'check RAM config', 'check warranty/price']
 			},
 			{
 				name: 'Acer Nitro V RTX 4050',
-				price_idr: null,
-				strengths: ['Possibly cheaper', 'Decent screen'],
-				flaws: ['Weaker cooling', 'Mixed build quality reports'],
-				verdict: 'CAUTION'
+				points: ['okay if cheaper', 'watch thermals', 'reject bad RAM config']
 			}
 		],
-		confidence: 'MOCK'
+		winner_row: 'Winner: Lenovo LOQ, unless Nitro V is meaningfully cheaper.',
+		next_action: 'Send both listing links. BLEP will judge final pick.'
 	};
-
-	// ─── Helpers ─────────────────────────────────────────────────────────
 
 	const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-	const scrollToBottom = () => {
-		if (mainEl) {
-			requestAnimationFrame(() => {
-				mainEl!.scrollTop = mainEl!.scrollHeight;
-			});
-		}
-	};
-
-	const detectMockResultType = (query: string): ScanResult => {
+	const detectIntent = (query: string): Intent => {
 		const lower = query.toLowerCase();
 		if (
-			lower.includes('vs') ||
-			lower.includes('versus') ||
+			/\b(vs|versus)\b/.test(lower) ||
 			lower.includes('mending') ||
-			lower.includes('compare')
+			lower.includes('compare') ||
+			lower.includes('which one')
 		) {
-			return MOCK_COMPARISON;
+			return 'comparison';
 		}
 		if (
 			lower.includes('recommend') ||
 			lower.includes('rekomendasi') ||
+			lower.includes('gaming laptop') ||
 			lower.includes('cari') ||
 			lower.includes('best')
 		) {
-			return MOCK_RECOMMENDATION;
+			return 'recommendation';
 		}
-		return MOCK_VERDICT;
+		return 'verdict';
 	};
 
-	const verdictColor = (v: string) => {
-		switch (v) {
-			case 'APPROVED':
-				return 'bg-mint text-ink';
-			case 'CAUTION':
-				return 'bg-[#FFE566] text-ink';
-			case 'WASTE':
-				return 'bg-ink text-white';
-			default:
-				return 'bg-paper-dark text-ink';
-		}
+	const verdictColor = (value: string) => {
+		const upper = value.toUpperCase();
+		if (upper.includes('APPROVED')) return 'verdict-approved';
+		if (upper.includes('CAUTION')) return 'verdict-caution';
+		if (upper.includes('WASTE')) return 'verdict-waste';
+		if (upper.includes('RECOMMENDATION')) return 'verdict-recommendation';
+		return 'verdict-default';
 	};
 
-	const compVerdictColor = (v: string) => {
-		switch (v) {
-			case 'CLEAR_WIN':
-				return 'bg-mint text-ink';
-			case 'CLOSE_CALL':
-				return 'bg-[#FFE566] text-ink';
-			case 'BOTH_BAD':
-				return 'bg-ink text-white';
-			default:
-				return 'bg-paper-dark text-ink';
+	const startElapsedTimer = () => {
+		elapsedSeconds = 0;
+		elapsedTimer = setInterval(() => {
+			elapsedSeconds += 1;
+		}, 1000);
+	};
+
+	const stopElapsedTimer = () => {
+		if (elapsedTimer) {
+			clearInterval(elapsedTimer);
+			elapsedTimer = null;
 		}
 	};
 
-	const formatIdr = (value: number | null) =>
-		value === null ? '—' : `Rp${value.toLocaleString('id-ID')}`;
-
-	const labelFor = (value: string) =>
-		value
-			.split('_')
-			.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-			.join(' ');
-
-	// ─── Mock Scan ───────────────────────────────────────────────────────
+	const scrollToBottom = async () => {
+		await tick();
+		if (chatViewportEl) {
+			chatViewportEl.scrollTop = chatViewportEl.scrollHeight;
+		}
+	};
 
 	async function runMockScan(query: string) {
 		if (!query.trim() || mode === 'running') return;
 
+		const runId = crypto.randomUUID();
 		mode = 'running';
-		scanResult = null;
-		brainJuice = Math.max(0, brainJuice - 1);
+		activeHistoryId = null;
 
-		messages = [
-			...messages,
-			{ role: 'user', content: query, timestamp: Date.now() }
-		];
-
-		// Initialize tool steps
-		toolSteps = MOCK_TOOL_STEPS.map((s) => ({ ...s, status: 'queued' as ToolStatus }));
-		scrollToBottom();
-
-		// Animate through steps
-		for (let i = 0; i < toolSteps.length; i++) {
-			toolSteps[i].status = 'running';
-			await delay(600 + Math.random() * 500);
-			toolSteps[i].status = 'done';
-			toolSteps[i].output = BLEP_LOG_LINES[i] ?? '[blep done]';
+		if (brainJuice <= 0) {
+			messages = [
+				...messages,
+				{ id: `${runId}-user`, role: 'user', content: query, timestamp: Date.now() },
+				{
+					id: `${runId}-assistant`,
+					role: 'blep',
+					status: 'loading',
+					content: 'Checking brain reserves...',
+					timestamp: Date.now()
+				}
+			];
+			draftInput = '';
+			scrollToBottom();
+			await delay(1000);
+			const tiredResponses = [
+				"BLEP is tired, ask again later!",
+				"BLEPpp?! Oh, no BLEP is tired. Ask again later?",
+				"Sorry buddy, ask me again later okay?",
+				"My silicon brain is completely out of juice. Try again later!",
+				"I'm depleted. No more hardware judging for now. Ask me again later!"
+			];
+			const randomResponse = tiredResponses[Math.floor(Math.random() * tiredResponses.length)];
+			messages = messages.map((m) =>
+				m.id === `${runId}-assistant` ? { ...m, status: 'done', content: randomResponse } : m
+			);
+			mode = 'done';
+			scrollToBottom();
+			return;
 		}
 
-		await delay(400);
-
-		const result = detectMockResultType(query);
-		scanResult = result;
-
+		brainJuice = Math.max(0, brainJuice - 1);
 		messages = [
 			...messages,
+			{ id: `${runId}-user`, role: 'user', content: query, timestamp: Date.now() },
 			{
+				id: `${runId}-assistant`,
 				role: 'blep',
-				content:
-					result.mode === 'VERDICT'
-						? `Verdict: ${(result as VerdictResult).verdict}`
-						: result.mode === 'RECOMMENDATION'
-							? 'Recommendation ready.'
-							: 'Comparison complete.',
+				status: 'loading',
+				content: 'Checking market traps...',
 				timestamp: Date.now()
 			}
 		];
+		draftInput = '';
 
-		mode = 'done';
-		input = '';
+		const intent = detectIntent(query);
+		toolSteps = TOOL_STEPS_BY_INTENT[intent].map((step) => ({
+			...step,
+			status: 'queued' as const
+		}));
+
+		startElapsedTimer();
 		scrollToBottom();
+
+		try {
+			const logs = LOG_OUTPUTS_BY_INTENT[intent];
+			for (let i = 0; i < toolSteps.length; i++) {
+				toolSteps[i].status = 'running';
+				await delay(600 + Math.random() * 500);
+				toolSteps[i].status = 'done';
+				toolSteps[i].output = logs[i];
+			}
+
+			await delay(300);
+			stopElapsedTimer();
+
+			let result: MockResult;
+			let content = '';
+			if (intent === 'comparison') {
+				result = MOCK_COMPARISON;
+				content = 'Pick cleaner 4050 deal.';
+			} else if (intent === 'recommendation') {
+				result = MOCK_RECOMMENDATION;
+				content = 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.';
+			} else {
+				result = MOCK_VERDICT;
+				content = 'Verdict is CAUTION. Here is why.';
+			}
+
+			messages = messages.map((m) =>
+				m.id === `${runId}-assistant` ? { ...m, status: 'done', content, result } : m
+			);
+		} catch {
+			messages = messages.map((m) =>
+				m.id === `${runId}-assistant`
+					? { ...m, status: 'error', content: 'Scan failed. Previous result kept.' }
+					: m
+			);
+		} finally {
+			mode = 'done';
+			selectedMode = intent;
+			scrollToBottom();
+		}
 	}
 
-	// ─── Handlers ────────────────────────────────────────────────────────
-
 	const handleSubmit = () => {
-		if (input.trim() && mode !== 'running') {
-			runMockScan(input.trim());
-		}
+		if (draftInput.trim() && mode !== 'running') runMockScan(draftInput.trim());
 	};
 
-	const handleKeydown = (e: KeyboardEvent) => {
-		if (e.key === 'Enter' && !e.shiftKey) {
-			e.preventDefault();
+	const handleKeydown = (event: KeyboardEvent) => {
+		if (event.key === 'Enter' && !event.shiftKey) {
+			event.preventDefault();
 			handleSubmit();
 		}
 	};
 
-	const handlePromptCard = (sample: string) => {
-		input = sample;
-		runMockScan(sample);
+	const handleModeChip = (card: PromptCard) => {
+		selectedMode = card.intent;
+		draftInput = card.sample;
+		textareaEl?.focus();
 	};
 
-	const handleTrySample = () => {
-		const sample = promptCards[0].sample;
-		input = sample;
-		runMockScan(sample);
+	const expandSidebar = () => {
+		sidebarExpanded = true;
 	};
 
-	const resetToIdle = () => {
+	const collapseSidebar = () => {
+		sidebarExpanded = false;
+	};
+
+	const clearScanContext = () => {
 		mode = 'idle';
 		messages = [];
 		toolSteps = [];
-		scanResult = null;
-		input = '';
+		draftInput = '';
+		selectedMode = null;
+		activeHistoryId = null;
+		elapsedSeconds = 0;
+		stopElapsedTimer();
 	};
 
-	// ─── Lifecycle ───────────────────────────────────────────────────────
+	const handleNewScanClick = () => {
+		clearScanContext();
+		activeHero = heroVariants[Math.floor(Math.random() * heroVariants.length)];
+		activeSidebarView = 'new_scan';
+		requestAnimationFrame(() => textareaEl?.focus());
+	};
+
+	const loadHistoryItem = (entry: HistoryEntry) => {
+		activeSidebarView = 'history';
+		activeHistoryId = entry.id;
+		draftInput = entry.query;
+		mode = 'done';
+
+		if (entry.verdict === 'RECOMMENDATION') {
+			selectedMode = 'recommendation';
+			messages = [
+				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: Date.now() - 5000 },
+				{
+					id: 'hist-blep',
+					role: 'blep',
+					status: 'done',
+					content: 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.',
+					timestamp: Date.now(),
+					result: MOCK_RECOMMENDATION
+				}
+			];
+			toolSteps = TOOL_STEPS_BY_INTENT.recommendation.map((step, i) => ({
+				...step,
+				status: 'done' as const,
+				output: LOG_OUTPUTS_BY_INTENT.recommendation[i]
+			}));
+		} else {
+			selectedMode = 'verdict';
+			const res =
+				entry.verdict === 'APPROVED'
+					? {
+							mode: 'VERDICT' as const,
+							title: 'Listing verdict',
+							badge: 'APPROVED / MOCK',
+							fatal_flaw: 'None major. Solid screen and upgradeable RAM.',
+							why_it_matters:
+								'Lenovo LOQ at 14 million is one of cleaner budget RTX 4050 entries in Indonesia. Decent cooling, upgradeable slots, honest pricing.',
+							better_target: 'Compare with Acer Nitro V to see if cheaper same-spec deal exists.',
+							next_action: 'Send listing link and BLEP will judge final pick.'
+						}
+					: {
+							mode: 'VERDICT' as const,
+							title: 'Listing verdict',
+							badge: 'WASTE / MOCK',
+							fatal_flaw: 'Soldered 8GB RAM and weak CPU at 12 million.',
+							why_it_matters:
+								'At 12 million, Ryzen 3 with soldered 8GB RAM is seller charity. Find Ryzen 5 or older RTX 3050 laptops instead.',
+							better_target: 'Look for Ryzen 5 / 16GB upgradeable configs.',
+							next_action: 'Send listing link and BLEP will judge final pick.'
+						};
+			messages = [
+				{ id: 'hist-user', role: 'user', content: entry.query, timestamp: Date.now() - 5000 },
+				{
+					id: 'hist-blep',
+					role: 'blep',
+					status: 'done',
+					content:
+						entry.verdict === 'APPROVED'
+							? 'Verdict is APPROVED. Here is why.'
+							: 'Verdict is WASTE. Here is why.',
+					timestamp: Date.now(),
+					result: res
+				}
+			];
+			toolSteps = TOOL_STEPS_BY_INTENT.verdict.map((step, i) => ({
+				...step,
+				status: 'done' as const,
+				output: LOG_OUTPUTS_BY_INTENT.verdict[i]
+			}));
+		}
+		scrollToBottom();
+	};
+
+	const canSubmit = $derived(draftInput.trim().length > 0 && mode !== 'running');
+	const collapsed = $derived(!sidebarExpanded || isMobileRail);
+	const sidebarWidth = $derived(collapsed ? '68px' : '292px');
+	const activityWidth = $derived(activityOpen ? '320px' : '0px');
+	const composerPlaceholder = $derived(modeByIntent(selectedMode).placeholder);
+
 	onMount(() => {
+		document.documentElement.classList.add('app-lock');
+		document.body.classList.add('app-lock');
+
 		textareaEl?.focus();
+		const mediaQuery = window.matchMedia('(max-width: 980px)');
+		const syncMobileRail = () => {
+			isMobileRail = mediaQuery.matches;
+		};
+
+		syncMobileRail();
+		mediaQuery.addEventListener('change', syncMobileRail);
+
+		const interval = setInterval(() => {
+			now = new Date();
+		}, 60000);
+
+		return () => {
+			document.documentElement.classList.remove('app-lock');
+			document.body.classList.remove('app-lock');
+			mediaQuery.removeEventListener('change', syncMobileRail);
+			clearInterval(interval);
+			stopElapsedTimer();
+		};
 	});
 </script>
 
@@ -450,606 +599,645 @@
 	/>
 </svelte:head>
 
-<div class="app-shell">
-	<!-- ═══ NAVBAR ═══ -->
-	<nav class="app-navbar" aria-label="App navigation">
-		<div class="app-navbar__left">
-			<a href="/" class="focus-visible-ring flex items-center" aria-label="BLEP home">
-				<img class="h-5 w-auto sm:h-6" src="/logo-full-main.svg" alt="BLEP" />
-			</a>
-		</div>
-		<div class="app-navbar__center">
-			<span class="font-mono text-[10px] font-bold tracking-[0.15em] text-ink/50 uppercase"
-				>hardware court</span
+{#snippet ActivityLog()}
+	<div class="activity-inner">
+		<div class="activity-header">
+			<div>
+				<h2 class="activity-title {fontDisplay}">Activity</h2>
+				<p class="activity-subtitle {fontMono}">
+					{mode === 'running' ? `${elapsedSeconds}s running` : 'agent trace'}
+				</p>
+			</div>
+			<button
+				type="button"
+				class="btnIcon panel-close"
+				onclick={() => (activityOpen = false)}
+				aria-label="Close activity"
 			>
+				×
+			</button>
 		</div>
-		<div class="app-navbar__right">
-			<a
-				href="/"
-				class="focus-visible-ring font-display text-xs font-semibold text-ink/60 underline decoration-ink/30 underline-offset-2 transition hover:text-ink"
-				>Back home</a
-			>
-			<span
-				class="inline-flex items-center gap-1.5 border border-ink/20 px-2.5 py-1 font-mono text-[10px] font-bold text-ink/70 uppercase"
-			>
-				<span
-					class="inline-block h-1.5 w-1.5 {brainJuice > 0 ? 'bg-mint' : 'bg-ink/30'}"
-				></span>
-				Brain Juice {brainJuice}/2
-			</span>
-		</div>
-	</nav>
 
-	<div class="app-body">
-		<!-- ═══ LEFT SIDEBAR: HISTORY ═══ -->
-		<aside class="app-sidebar-left" class:sidebar-open={sidebarOpen} aria-label="Scan history">
-			<div class="sidebar-header">
-				<h2 class="font-display text-sm font-bold uppercase tracking-wide">History</h2>
-				<button
-					class="focus-visible-ring sidebar-close-btn lg:hidden"
-					onclick={() => (sidebarOpen = false)}
-					aria-label="Close history"
-				>
-					<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-						<path d="M18 6L6 18M6 6l12 12" />
-					</svg>
-				</button>
-			</div>
-			<ul class="sidebar-list">
-				{#each history as entry (entry.id)}
-					<li class="sidebar-item">
-						<button
-							class="focus-visible-ring sidebar-item-btn"
-							onclick={() => {
-								input = entry.query;
-								sidebarOpen = false;
-							}}
-						>
-							<span class="sidebar-item-query">{entry.query}</span>
-							{#if entry.verdict}
-								<span class="sidebar-item-badge {verdictColor(entry.verdict)}"
-									>{entry.verdict}</span
-								>
-							{/if}
-						</button>
-					</li>
-				{/each}
-			</ul>
-			{#if history.length === 0}
-				<p class="px-4 py-8 text-center font-mono text-[10px] text-ink/40 uppercase">No scans yet</p>
-			{/if}
-		</aside>
-
-		<!-- ═══ MAIN ═══ -->
-		<main class="app-main" bind:this={mainEl}>
-			<!-- Mobile toolbar -->
-			<div class="mobile-toolbar lg:hidden">
-				<button
-					class="focus-visible-ring mobile-toolbar-btn"
-					onclick={() => (sidebarOpen = !sidebarOpen)}
-					aria-label="Toggle history"
-				>
-					<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M4 6h16M4 12h16M4 18h16" />
-					</svg>
-					<span>History</span>
-				</button>
-				{#if mode === 'running' || mode === 'done'}
-					<button
-						class="focus-visible-ring mobile-toolbar-btn"
-						onclick={() => (thinkingOpen = !thinkingOpen)}
-						aria-label="Toggle thinking log"
-					>
-						<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M9 5l7 7-7 7" />
-						</svg>
-						<span>Thinking</span>
-					</button>
-				{/if}
-			</div>
-
-			<!-- ─── Idle State ─── -->
-			{#if mode === 'idle'}
-				<div class="idle-state" in:fade={{ duration: 200 }}>
-					<!-- Mascot tiny -->
-					<div class="idle-mascot" aria-hidden="true">
-						<svg viewBox="0 0 862.31 902.94" class="h-16 w-16 opacity-25">
-							<g transform="scale(-1, 1) translate(-862.31, 0)">
-								<polygon
-									class="cube-line-mini"
-									points="30 42.28 432.76 183.25 432.76 334.29 828.81 243.66 832.17 740.4 432.76 871.3 30 733.69 30 42.28"
-								/>
-								<polygon
-									fill="#111"
-									points="719.45 519.14 658.1 533.12 655.08 459.26 716.42 445.28 719.45 519.14"
-								/>
-								<polygon
-									fill="#111"
-									points="592.49 547.48 531.14 561.46 528.12 487.6 589.47 473.62 592.49 547.48"
-								/>
-							</g>
-						</svg>
-					</div>
-
-					<h1 class="idle-heading">What are we judging?</h1>
-					<p class="idle-subtext">
-						Paste a listing, screenshot text, or ask for a recommendation.
-					</p>
-
-					<div class="prompt-cards">
-						{#each promptCards as card, i (card.title)}
-							<button
-								class="focus-visible-ring prompt-card"
-								onclick={() => handlePromptCard(card.sample)}
-								in:fly={{ y: 20, delay: i * 80, duration: 300 }}
-							>
-								<span class="prompt-card-marker" aria-hidden="true">+</span>
-								<div>
-									<h3 class="prompt-card-title">{card.title}</h3>
-									<p class="prompt-card-text">{card.text}</p>
-								</div>
-							</button>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			<!-- ─── Chat / Result ─── -->
-			{#if mode !== 'idle'}
-				<div class="chat-area">
-					{#each messages as msg, i (msg.timestamp + i)}
-						<div
-							class="chat-msg {msg.role === 'user' ? 'chat-msg--user' : 'chat-msg--blep'}"
-							in:fly={{ y: 12, duration: 200 }}
-						>
-							{#if msg.role === 'user'}
-								<div class="chat-bubble-user">
-									<p>{msg.content}</p>
-								</div>
-							{:else}
-								<div class="chat-bubble-blep">
-									<span class="chat-label-blep">blep</span>
-									<p>{msg.content}</p>
-								</div>
-							{/if}
-						</div>
-					{/each}
-
-					<!-- Mobile thinking log -->
-					{#if (mode === 'running' || mode === 'done') && thinkingOpen}
-						<div class="mobile-thinking-panel lg:hidden" transition:slide={{ duration: 200 }}>
-							<div class="sidebar-header">
-								<h3 class="font-mono text-[10px] font-bold tracking-[0.15em] text-ink/50 uppercase">
-									Thinking log
-								</h3>
-							</div>
-							<ul class="tool-steps-list">
-								{#each toolSteps as step (step.id)}
-									<li class="tool-step" class:tool-step--done={step.status === 'done'}>
-										<div class="tool-step-header">
-											<code class="tool-step-name">{step.name}</code>
-											<span
-												class="tool-step-badge"
-												class:badge-queued={step.status === 'queued'}
-												class:badge-running={step.status === 'running'}
-												class:badge-done={step.status === 'done'}
-											>
-												{step.status}
-											</span>
-										</div>
-										<p class="tool-step-label">{step.label}</p>
-										{#if step.output}
-											<p class="tool-step-output" in:fade={{ duration: 150 }}>{step.output}</p>
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
-
-					<!-- ─── Result Card ─── -->
-					{#if scanResult}
-						<div class="result-card" in:fly={{ y: 24, duration: 350 }}>
-							{#if scanResult.mode === 'VERDICT'}
-								{@const v = scanResult as VerdictResult}
-								<div class="result-card-inner">
-									<header class="result-header">
-										<div>
-											<h2 class="result-device-name">{v.name}</h2>
-											<p class="result-meta">
-												Landfill: {v.landfill_year} · Forum: {v.specs.forum_score}/10
-											</p>
-										</div>
-										<span class="verdict-stamp {verdictColor(v.verdict)}">{v.verdict}</span>
-									</header>
-
-									<div class="result-fatal-flaw">
-										<span class="result-label">Fatal flaw</span>
-										<p>{v.fatal_flaw}</p>
-									</div>
-
-									<blockquote class="result-roast">
-										"{v.roast}"
-									</blockquote>
-
-									<p class="result-summary">{v.summary}</p>
-
-									{#if v.better_target}
-										<div class="result-better-target">
-											<span class="result-label">Better target</span>
-											<p>{v.better_target}</p>
-										</div>
-									{/if}
-
-									<div class="result-specs-row">
-										<div class="result-spec-chip">
-											<span class="result-label">Upgradeable</span>
-											<span>{v.specs.upgradeable ? 'Yes' : 'No'}</span>
-										</div>
-										<div class="result-spec-chip">
-											<span class="result-label">Thermal</span>
-											<span class="text-xs">{v.specs.thermal}</span>
-										</div>
-									</div>
-
-									<div class="result-evidence">
-										<span class="result-label">Evidence</span>
-										{#each v.evidence as ev (ev.title)}
-											<div class="evidence-item">
-												<p class="evidence-quote">"{ev.quote_or_fact}"</p>
-												<p class="evidence-relevance">{ev.relevance}</p>
-											</div>
-										{/each}
-									</div>
-
-									<div class="result-confidence">
-										<span class="font-mono text-[9px] font-bold text-ink/40 uppercase"
-											>Confidence</span
-										>
-										<span class="font-mono text-xs font-bold">{v.confidence}</span>
-									</div>
-								</div>
-							{:else if scanResult.mode === 'RECOMMENDATION'}
-								{@const r = scanResult as RecommendationResult}
-								<div class="result-card-inner">
-									<header class="result-header">
-										<div>
-											<h2 class="result-device-name">Build this instead.</h2>
-											<p class="result-meta">
-												{r.parsed_need.category} · {r.parsed_need.use_case} · {formatIdr(
-													r.parsed_need.budget_idr
-												)} · {r.parsed_need.market}
-											</p>
-										</div>
-										<span class="verdict-stamp bg-mint text-ink">{r.confidence}</span>
-									</header>
-
-									<p class="result-summary">{r.recommendation_summary}</p>
-
-									<div class="result-specs-grid">
-										{#each Object.entries(r.target_specs) as [key, val] (key)}
-											<div class="result-spec-item">
-												<span class="result-label">{labelFor(key)}</span>
-												<span class="text-sm">{val}</span>
-											</div>
-										{/each}
-									</div>
-
-									<div class="result-picks">
-										<span class="result-label">Picks</span>
-										{#each r.picks as pick (pick.label + pick.name)}
-											<div class="pick-card">
-												<div class="pick-header">
-													<h3 class="pick-name">{pick.name}</h3>
-													<span class="pick-label">{labelFor(pick.label)}</span>
-												</div>
-												<p class="pick-why">{pick.why}</p>
-												<p class="pick-caveat">{pick.caveat}</p>
-											</div>
-										{/each}
-									</div>
-
-									<div class="result-avoid-rules">
-										<div>
-											<span class="result-label">Avoid traps</span>
-											{#each r.avoid as trap (trap.pattern)}
-												<div class="avoid-item">
-													<strong>{trap.pattern}</strong>
-													<p>{trap.reason}</p>
-												</div>
-											{/each}
-										</div>
-										<div>
-											<span class="result-label">Deal rules</span>
-											<ol class="deal-rules-list">
-												{#each r.deal_rules as rule (rule)}
-													<li>{rule}</li>
-												{/each}
-											</ol>
-										</div>
-									</div>
-
-									<div class="result-next-action">
-										<span class="result-label">Next action</span>
-										<p>{r.next_action}</p>
-									</div>
-								</div>
-							{:else if scanResult.mode === 'COMPARISON'}
-								{@const c = scanResult as ComparisonResult}
-								<div class="result-card-inner">
-									<header class="result-header">
-										<div>
-											<h2 class="result-device-name">
-												{c.winner} <span class="text-ink/40">vs</span>
-												{c.loser}
-											</h2>
-										</div>
-										<span class="verdict-stamp {compVerdictColor(c.verdict)}"
-											>{c.verdict.replace('_', ' ')}</span
-										>
-									</header>
-
-									<p class="result-summary">{c.reason}</p>
-
-									<div class="comparison-grid">
-										{#each c.compared as item (item.name)}
-											<div class="comparison-card">
-												<div class="comparison-card-header">
-													<h3 class="font-display text-lg font-bold">{item.name}</h3>
-													<span
-														class="verdict-stamp-small {verdictColor(item.verdict)}"
-														>{item.verdict}</span
-													>
-												</div>
-												<div class="comparison-lists">
-													<div>
-														<span class="result-label">Strengths</span>
-														<ul>
-															{#each item.strengths as s (s)}
-																<li class="comparison-plus">+ {s}</li>
-															{/each}
-														</ul>
-													</div>
-													<div>
-														<span class="result-label">Flaws</span>
-														<ul>
-															{#each item.flaws as f (f)}
-																<li class="comparison-minus">− {f}</li>
-															{/each}
-														</ul>
-													</div>
-												</div>
-											</div>
-										{/each}
-									</div>
-
-									<div class="result-confidence">
-										<span class="font-mono text-[9px] font-bold text-ink/40 uppercase"
-											>Confidence</span
-										>
-										<span class="font-mono text-xs font-bold">{c.confidence}</span>
-									</div>
-								</div>
-							{/if}
-
-							<!-- New scan button -->
-							<button class="new-scan-btn focus-visible-ring" onclick={resetToIdle}>
-								New scan
-							</button>
-						</div>
-					{/if}
-				</div>
-			{/if}
-
-			<!-- ═══ COMPOSER ═══ -->
-			<div class="composer-dock">
-				<div class="composer-inner">
-					<label for="blep-input" class="sr-only">Your hardware question</label>
-					<textarea
-						id="blep-input"
-						bind:this={textareaEl}
-						bind:value={input}
-						onkeydown={handleKeydown}
-						rows="1"
-						disabled={mode === 'running'}
-						placeholder={'Paste listing link, specs, or ask: "gaming laptop 15 juta"'}
-						class="composer-textarea focus-visible-ring"
-					></textarea>
-					<div class="composer-actions">
-						{#if mode === 'idle'}
-							<button
-								class="focus-visible-ring try-sample-btn"
-								onclick={handleTrySample}
-								type="button"
-							>
-								Try sample
-							</button>
-						{/if}
-						<button
-							class="focus-visible-ring judge-btn"
-							onclick={handleSubmit}
-							disabled={mode === 'running' || !input.trim()}
-							type="button"
-						>
-							{#if mode === 'running'}
-								<span class="judge-btn-spinner"></span>
-								Thinking
-							{:else}
-								Judge
-							{/if}
-						</button>
-					</div>
-				</div>
-			</div>
-		</main>
-
-		<!-- ═══ RIGHT SIDEBAR: THINKING LOG ═══ -->
-		<aside class="app-sidebar-right" aria-label="Thinking log">
-			<div class="sidebar-header">
-				<h2 class="font-mono text-[10px] font-bold tracking-[0.15em] text-ink/50 uppercase">
-					Thinking log
-				</h2>
-			</div>
-
+		<div class="activity-body">
 			{#if toolSteps.length === 0}
-				<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
-					<div class="mb-3 h-px w-8 bg-ink/15"></div>
-					<p class="font-mono text-[10px] leading-relaxed text-ink/35 uppercase">
-						Submit a query to see<br />agent tool calls here
-					</p>
-					<div class="mt-3 h-px w-8 bg-ink/15"></div>
+				<div class="activity-empty">
+					<div class="activity-empty-line"></div>
+					<p class="activity-empty-text {fontMono}">Submit query.<br />Tool calls appear here.</p>
+					<div class="activity-empty-line"></div>
 				</div>
 			{:else}
-				<ul class="tool-steps-list">
+				<ul class="activity-steps" aria-label="Activity steps">
 					{#each toolSteps as step (step.id)}
-						<li
-							class="tool-step"
-							class:tool-step--done={step.status === 'done'}
-							in:fly={{ x: 12, duration: 200 }}
-						>
-							<div class="tool-step-header">
-								<code class="tool-step-name">{step.name}</code>
+						<li class="activity-step" class:step-done={step.status === 'done'}>
+							<div class="activity-step-head">
+								<code class="activity-step-name {fontMono}">{step.name}</code>
 								<span
-									class="tool-step-badge"
-									class:badge-queued={step.status === 'queued'}
-									class:badge-running={step.status === 'running'}
-									class:badge-done={step.status === 'done'}
+									class="activity-step-status {fontMono}"
+									class:step-running={step.status === 'running'}
+									class:step-queued={step.status === 'queued'}
 								>
 									{step.status}
 								</span>
 							</div>
-							<p class="tool-step-label">{step.label}</p>
+							<p class="activity-step-label {fontBody}">{step.label}</p>
 							{#if step.output}
-								<p class="tool-step-output" in:fade={{ duration: 150 }}>{step.output}</p>
+								<p class="activity-step-output {fontMono}">{step.output}</p>
 							{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
-		</aside>
+		</div>
 	</div>
+{/snippet}
+
+{#snippet Composer()}
+	<div class="composer-wrap">
+		<div class="composer-box">
+			<label for="blep-input" class="sr-only">Your hardware question</label>
+			<textarea
+				id="blep-input"
+				bind:this={textareaEl}
+				bind:value={draftInput}
+				onkeydown={handleKeydown}
+				disabled={mode === 'running'}
+				placeholder={composerPlaceholder}
+				class="composer-textarea {fontBody}"
+				style="min-height: 80px; padding: 12px;"
+			></textarea>
+			<div class="composer-actions-row">
+				<button
+					class="btnPrimary composer-primary"
+					onclick={handleSubmit}
+					disabled={!canSubmit}
+					type="button"
+				>
+					{mode === 'running' ? 'Asking...' : 'Ask BLEP'}
+				</button>
+			</div>
+		</div>
+
+		{#if messages.length === 0}
+			<div class="composer-chips-under">
+				<div class="mode-chips" aria-label="Scan mode">
+					{#each promptCards as card (card.intent)}
+						<button
+							class="mode-chip {fontDisplay}"
+							class:selected={selectedMode === card.intent}
+							onclick={() => handleModeChip(card)}
+							type="button"
+							aria-pressed={selectedMode === card.intent}
+						>
+							{card.label}
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<p class="composer-disclaimer {fontBody}">BLEP can make mistakes. You decide the final buy.</p>
+	</div>
+{/snippet}
+
+<div
+	class="app-shell {fontBody}"
+	style:--sidebar-width={sidebarWidth}
+	style:--activity-width={activityWidth}
+>
+	<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
+		<div class="sidebar-brand">
+			<button
+				type="button"
+				class="sidebar-brand-button icon-only"
+				onclick={expandSidebar}
+				aria-label="Expand sidebar"
+				aria-expanded={!collapsed}
+				aria-controls="sidebar"
+			>
+				<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
+			</button>
+			<div class="sidebar-brand-expanded">
+				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
+					<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
+				</a>
+				<button
+					type="button"
+					class="btnIcon sidebar-toggle"
+					onclick={collapseSidebar}
+					aria-label="Collapse sidebar"
+					aria-expanded={!collapsed}
+					aria-controls="sidebar"
+				>
+					‹
+				</button>
+			</div>
+		</div>
+
+		<button
+			class="sidebar-new"
+			class:active={activeSidebarView === 'new_scan'}
+			onclick={handleNewScanClick}
+			type="button"
+			aria-label="New scan"
+			aria-current={activeSidebarView === 'new_scan' ? 'page' : undefined}
+		>
+			<span class="sidebar-new-icon" aria-hidden="true">+</span>
+			<span class="sidebar-new-text">New scan</span>
+		</button>
+
+		<div class="sidebar-label {fontMono}">History</div>
+
+		<ul class="sidebar-history">
+			{#each history as entry (entry.id)}
+				<li>
+					<button
+						class="sidebar-history-item"
+						class:active={activeHistoryId === entry.id}
+						onclick={() => loadHistoryItem(entry)}
+						type="button"
+						aria-label={entry.query}
+					>
+						<span class="history-dot {verdictColor(entry.verdict)}" aria-hidden="true"></span>
+						<span class="history-copy">
+							<span class="history-query {fontBody}">{entry.query}</span>
+							<span class="history-badge {fontMono} {verdictColor(entry.verdict)}"
+								>{entry.verdict}</span
+							>
+						</span>
+					</button>
+				</li>
+			{/each}
+		</ul>
+	</aside>
+
+	<main class="main-column">
+		<header class="main-actions" aria-label="App actions">
+			<div class="brain-badge {fontMono}" aria-label={`Brain Juice ${brainJuice} of 3`} data-tooltip={tooltipText}>
+				<span class="brain-dot" class:active={brainJuice > 0}></span>
+				BRAIN JUICE {brainJuice}/3
+			</div>
+			<button
+				type="button"
+				class="log-toggle {fontDisplay}"
+				onclick={() => (activityOpen = !activityOpen)}
+				aria-expanded={activityOpen}
+				aria-controls="activity-panel"
+			>
+				Log
+			</button>
+		</header>
+
+		<section class="chat-viewport" bind:this={chatViewportEl} aria-label="Chat">
+			<div class="chat-inner">
+				{#if mode === 'idle'}
+					<div class="idle-stack" in:fade={{ duration: 150 }}>
+						<div class="idle-copy">
+							<div class="idle-heading-row">
+								<img src="/logo-main.svg" alt="" class="idle-mark" />
+								<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
+							</div>
+							<p class="idle-subcopy {fontBody}">
+								{activeHero.subhead}
+							</p>
+						</div>
+
+						<div class="idle-bottom">
+							{@render Composer()}
+						</div>
+					</div>
+				{:else}
+					<div class="messages-list">
+						{#each messages as msg, idx (msg.id || msg.timestamp + idx)}
+							{#if msg.role === 'user'}
+								<div class="chat-run">
+									<div
+										class="msg-row msg-user"
+										in:fly={{ y: 10, duration: 160 }}
+									>
+										<div class="msg-bubble-user {fontBody}">
+											<p>{msg.content}</p>
+										</div>
+									</div>
+
+									{#if messages[idx + 1] && messages[idx + 1].role === 'blep'}
+										{@const blepMsg = messages[idx + 1]}
+										<div
+											class="msg-row msg-blep"
+											in:fly={{ y: 10, duration: 160 }}
+										>
+											<div class="msg-blep-block">
+												<span class="msg-blep-label {fontMono}">BLEP</span>
+												{#if blepMsg.status === 'loading'}
+													<p class="msg-blep-content thinking {fontBody}">{blepMsg.content}</p>
+												{:else}
+													<p class="msg-blep-content {fontBody}">{blepMsg.content}</p>
+												{/if}
+											</div>
+										</div>
+
+										{#if blepMsg.result}
+											<div class="result-card" in:fly={{ y: 16, duration: 220 }}>
+												{#if blepMsg.result.mode === 'VERDICT'}
+													{@const result = blepMsg.result as VerdictResult}
+													<header class="result-header">
+														<h2 class="result-title {fontDisplay}">{result.title}</h2>
+														<span class="result-badge {fontDisplay} {verdictColor(result.badge)}"
+															>{result.badge}</span
+														>
+													</header>
+													<div class="result-grid">
+														<div>
+															<span class="result-label {fontMono}">Fatal flaw</span>
+															<p class="result-strong {fontBody}">{result.fatal_flaw}</p>
+														</div>
+														<div>
+															<span class="result-label {fontMono}">Better target</span>
+															<p class="result-strong {fontBody}">{result.better_target}</p>
+														</div>
+													</div>
+													<p class="result-copy {fontBody}">{result.why_it_matters}</p>
+													<div class="result-action">
+														<span class="result-label {fontMono}">Next</span>
+														<p class="result-strong {fontBody}">{result.next_action}</p>
+													</div>
+												{:else if blepMsg.result.mode === 'RECOMMENDATION'}
+													{@const result = blepMsg.result as RecommendationResult}
+													<header class="result-header">
+														<h2 class="result-title {fontDisplay}">{result.title}</h2>
+														<span class="result-badge {fontDisplay} verdict-approved">RECOMMENDATION</span
+														>
+													</header>
+													<p class="result-copy {fontBody}">{result.summary}</p>
+													<div class="result-grid">
+														<div>
+															<span class="result-label {fontMono}">Buy target</span>
+															<ul class="result-list {fontBody}">
+																{#each result.buy_target.slice(0, 4) as item (item)}
+																	<li>{item}</li>
+																{/each}
+															</ul>
+														</div>
+														<div>
+															<span class="result-label {fontMono}">Avoid</span>
+															<ul class="result-list {fontBody}">
+																{#each result.avoid.slice(0, 3) as trap (trap.pattern)}
+																	<li><strong>{trap.pattern}</strong>: {trap.reason}</li>
+																{/each}
+															</ul>
+														</div>
+													</div>
+													<div class="result-action">
+														<span class="result-label {fontMono}">Next</span>
+														<p class="result-strong {fontBody}">{result.next_action}</p>
+													</div>
+												{:else}
+													{@const result = blepMsg.result as ComparisonResult}
+													<header class="result-header">
+														<h2 class="result-title {fontDisplay}">{result.title}</h2>
+														<span class="result-badge {fontDisplay} verdict-caution">{result.badge}</span>
+													</header>
+													<p class="result-copy {fontBody}">{result.summary}</p>
+													<div class="compare-grid">
+														{#each result.compared as item (item.name)}
+															<div class="compare-col">
+																<h3 class="compare-name {fontDisplay}">{item.name}</h3>
+																<ul class="result-list {fontBody}">
+																	{#each item.points as point (point)}
+																		<li>{point}</li>
+																	{/each}
+																</ul>
+															</div>
+														{/each}
+													</div>
+													<div class="result-action winner">
+														<span class="result-label {fontMono}">Winner</span>
+														<p class="result-strong {fontBody}">{result.winner_row}</p>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									{/if}
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</section>
+
+		{#if mode !== 'idle'}
+			<footer class="composer-dock">
+				{@render Composer()}
+			</footer>
+		{/if}
+	</main>
+
+	{#if activityOpen}
+		<aside
+			id="activity-panel"
+			class="activity-panel"
+			aria-label="Activity log"
+			transition:fly={{ x: 28, duration: 180 }}
+		>
+			{@render ActivityLog()}
+		</aside>
+	{/if}
 </div>
 
 <style>
-	/* ═══════════════════════════════════════════════════════════════════════
-	   BLEP APP SHELL
-	   ═══════════════════════════════════════════════════════════════════════ */
+	:global(html.app-lock),
+	:global(body.app-lock) {
+		height: 100%;
+		overflow: hidden;
+	}
 
 	.app-shell {
+		height: 100dvh;
+		display: grid;
+		grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(--activity-width);
+		overflow: hidden;
+		background: var(--color-paper);
+		color: var(--color-ink);
+		transition: grid-template-columns 180ms ease;
+	}
+
+	.sidebar {
+		min-width: 0;
+		border-right: 1px solid rgba(17, 17, 17, 0.12);
+		background: #f7f5ef;
 		display: flex;
 		flex-direction: column;
-		height: 100vh;
-		height: 100dvh;
 		overflow: hidden;
 	}
 
-	/* ── Navbar ── */
-	.app-navbar {
+	.sidebar-brand {
+		min-height: 64px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.75rem;
-		height: 3rem;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.12);
-		padding: 0 1rem;
-		flex-shrink: 0;
+		padding: 12px 14px;
+		position: relative;
+		transition: padding 180ms ease;
 	}
 
-	.app-navbar__left {
+	.sidebar.collapsed .sidebar-brand {
+		padding: 10px 12px;
+	}
+
+	.sidebar-brand-link {
+		min-width: 0;
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-start;
+		color: var(--color-ink);
+		text-decoration: none;
 		flex: 1;
+	}
+
+	.sidebar-brand-button {
+		position: absolute;
+		left: 12px;
+		top: 10px;
+		width: 44px;
+		height: 44px;
+		border: 0;
+		background: transparent;
+		color: var(--color-ink);
+		cursor: pointer;
+		display: inline-grid;
+		place-items: center;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 180ms ease;
+	}
+
+	.sidebar.collapsed .sidebar-brand-button {
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	.sidebar-brand-expanded {
 		display: flex;
 		align-items: center;
-	}
-
-	.app-navbar__center {
-		flex: 0 0 auto;
-	}
-
-	.app-navbar__right {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 0.75rem;
-	}
-
-	/* ── Body grid ── */
-	.app-body {
-		display: flex;
-		flex: 1;
-		min-height: 0;
+		justify-content: space-between;
+		width: 100%;
+		gap: 12px;
+		opacity: 1;
+		pointer-events: auto;
+		white-space: nowrap;
 		overflow: hidden;
+		transition: opacity 180ms ease;
 	}
 
-	/* ── Sidebars ── */
-	.app-sidebar-left,
-	.app-sidebar-right {
+	.sidebar.collapsed .sidebar-brand-expanded {
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.sidebar-brand-link:hover,
+	.sidebar-brand-link:focus-visible,
+	.sidebar-brand-button:hover,
+	.sidebar-brand-button:focus-visible,
+	.sidebar-toggle:hover,
+	.sidebar-toggle:focus-visible,
+	.log-toggle:hover,
+	.log-toggle:focus-visible {
+		background: rgba(17, 17, 17, 0.06);
+		outline: none;
+		border: 0;
+		box-shadow: none;
+	}
+
+	.sidebar-logo-full {
+		display: block;
+		width: auto;
+		height: 32px;
+	}
+
+	.sidebar-logo-icon {
+		display: block;
+		width: 34px;
+		height: 34px;
+		object-fit: contain;
+	}
+
+	.sidebar-toggle {
+		border: 0;
+		outline: none;
+		color: var(--color-ink);
+		font-family: var(--font-display);
+		font-size: 24px;
+		font-weight: 800;
+		line-height: 1;
+	}
+
+	.sidebar-new {
+		width: calc(100% - 28px);
+		min-height: 44px;
+		margin: 2px 14px 12px;
+		border: 1.5px solid transparent;
+		background: transparent;
+		color: var(--color-ink);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 12px;
+		text-align: left;
+		font-size: 14px;
+		font-weight: 700;
+		transition:
+			width 180ms ease,
+			margin 180ms ease,
+			padding 180ms ease,
+			gap 180ms ease,
+			border-color 180ms ease,
+			background 180ms ease;
+	}
+
+	.sidebar-new-icon {
+		font-size: 18px;
+		line-height: 1;
 		flex-shrink: 0;
+	}
+
+	.sidebar-new-text {
+		opacity: 1;
+		max-width: 150px;
+		white-space: nowrap;
+		overflow: hidden;
+		transition:
+			opacity 180ms ease,
+			max-width 180ms ease;
+	}
+
+	.sidebar.collapsed .sidebar-new-text {
+		opacity: 0;
+		max-width: 0;
+		pointer-events: none;
+	}
+
+	.sidebar-new:hover,
+	.sidebar-new:focus-visible,
+	.sidebar-new.active {
+		border-color: rgba(17, 17, 17, 0.16);
+		background: rgba(17, 17, 17, 0.05);
+		outline: 2px solid transparent;
+	}
+
+	.sidebar.collapsed .sidebar-new {
+		width: 44px;
+		margin: 2px auto 12px;
+		justify-content: center;
+		padding: 0;
+		gap: 0;
+	}
+
+	.sidebar-label {
+		padding: 8px 16px;
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: rgba(17, 17, 17, 0.42);
+		max-height: 30px;
+		overflow: hidden;
+		transition:
+			max-height 180ms ease,
+			padding 180ms ease;
+	}
+
+	.sidebar.collapsed .sidebar-label {
+		max-height: 0;
+		padding-top: 0;
+		padding-bottom: 0;
+		pointer-events: none;
+	}
+
+	.sidebar-history {
+		list-style: none;
+		margin: 0;
+		padding: 0 8px 16px;
 		overflow-y: auto;
-		border-color: rgba(17, 17, 17, 0.12);
+		width: 100%;
+		transition: padding 180ms ease;
 	}
 
-	.app-sidebar-left {
-		width: 15rem;
-		border-right: 1px solid rgba(17, 17, 17, 0.12);
-		display: none;
+	.sidebar.collapsed .sidebar-history {
+		padding: 0 0 16px;
 	}
 
-	.app-sidebar-right {
-		width: 17rem;
-		border-left: 1px solid rgba(17, 17, 17, 0.12);
-		display: none;
-	}
-
-	.sidebar-header {
+	.sidebar-history-item {
+		width: 100%;
+		min-height: 44px;
+		border: 0;
+		background: transparent;
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.875rem 1rem;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.08);
-	}
-
-	.sidebar-close-btn {
-		background: none;
-		border: none;
-		padding: 0.25rem;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 10px 8px;
+		text-align: left;
 		cursor: pointer;
 		color: var(--color-ink);
+		transition:
+			padding 180ms ease,
+			gap 180ms ease,
+			background 180ms ease;
 	}
 
-	.sidebar-list {
-		list-style: none;
-		padding: 0;
+	.sidebar.collapsed .sidebar-history-item {
+		justify-content: center;
+		align-items: center;
+		padding: 10px 0;
+		gap: 0;
+	}
+
+	.sidebar-history-item:hover,
+	.sidebar-history-item:focus-visible,
+	.sidebar-history-item.active {
+		background: rgba(17, 17, 17, 0.06);
+		outline: 2px solid transparent;
+	}
+
+	.history-dot {
+		width: 12px;
+		height: 12px;
+		margin-top: 4px;
+		border: 1.5px solid var(--color-ink);
+		box-shadow: 1.5px 1.5px 0 rgba(17, 17, 17, 0.9);
+		flex: 0 0 auto;
+		transition:
+			width 180ms ease,
+			height 180ms ease,
+			margin 180ms ease;
+	}
+
+	.sidebar.collapsed .history-dot {
+		width: 16px;
+		height: 16px;
 		margin: 0;
 	}
 
-	.sidebar-item {
-		border-bottom: 1px solid rgba(17, 17, 17, 0.06);
-	}
-
-	.sidebar-item-btn {
+	.history-copy {
 		display: flex;
+		min-width: 0;
 		flex-direction: column;
-		gap: 0.25rem;
-		width: 100%;
-		padding: 0.75rem 1rem;
-		text-align: left;
-		background: none;
-		border: none;
-		cursor: pointer;
-		transition: background-color 120ms ease;
+		gap: 5px;
+		max-width: 220px;
+		overflow: hidden;
+		transition: max-width 180ms ease;
 	}
 
-	.sidebar-item-btn:hover {
-		background-color: rgba(17, 17, 17, 0.03);
+	.sidebar.collapsed .history-copy {
+		max-width: 0;
+		pointer-events: none;
 	}
 
-	.sidebar-item-query {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		line-height: 1.4;
-		color: var(--color-ink);
+	.history-query {
+		font-size: 13px;
+		font-weight: 600;
+		line-height: 1.35;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
@@ -1057,848 +1245,742 @@
 		overflow: hidden;
 	}
 
-	.sidebar-item-badge {
-		font-family: var(--font-mono);
+	.history-badge {
+		width: fit-content;
+		border: 1px solid rgba(17, 17, 17, 0.18);
+		padding: 1px 6px;
 		font-size: 9px;
 		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		padding: 1px 6px;
-		display: inline-block;
-		width: fit-content;
+		letter-spacing: 0.06em;
 	}
 
-	/* ── Main area ── */
-	.app-main {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
+	.main-column {
 		min-width: 0;
-		overflow-y: auto;
-		position: relative;
+		min-height: 0;
+		display: grid;
+		grid-template-rows: auto minmax(0, 1fr) auto;
+		background: var(--color-paper);
 	}
 
-	/* ── Mobile toolbar ── */
-	.mobile-toolbar {
+	.main-actions {
+		position: sticky;
+		top: 0;
+		z-index: 30;
+		min-height: 58px;
+		padding: 8px 18px;
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 1rem;
+		justify-content: flex-end;
+		gap: 10px;
 		border-bottom: 1px solid rgba(17, 17, 17, 0.08);
-		flex-shrink: 0;
+		background: var(--color-paper);
 	}
 
-	.mobile-toolbar-btn {
+	.back-home {
+		min-height: 44px;
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
-		background: none;
-		border: 1px solid rgba(17, 17, 17, 0.15);
-		padding: 0.3rem 0.6rem;
-		font-family: var(--font-mono);
-		font-size: 10px;
+		justify-content: center;
+		gap: 8px;
+		padding: 0 8px;
+		color: rgba(17, 17, 17, 0.72);
+		text-decoration: none;
+	}
+
+	.back-home-logo {
+		height: 26px;
+		width: auto;
+		display: block;
+	}
+
+	.back-home-text {
+		font-size: 12px;
 		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		cursor: pointer;
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+
+	.back-home:hover,
+	.back-home:focus-visible {
 		color: var(--color-ink);
-		transition: border-color 120ms;
+		outline: 2px solid transparent;
 	}
 
-	.mobile-toolbar-btn:hover {
-		border-color: var(--color-ink);
-	}
-
-	/* ── Mobile sidebar overlay ── */
-	@media (max-width: 1023px) {
-		.app-sidebar-left {
-			position: fixed;
-			top: 3rem;
-			left: 0;
-			bottom: 0;
-			z-index: 40;
-			width: 16rem;
-			background: var(--color-paper);
-			transform: translateX(-100%);
-			transition: transform 200ms ease;
-		}
-
-		.app-sidebar-left.sidebar-open {
-			transform: translateX(0);
-			box-shadow: 4px 0 24px rgba(0, 0, 0, 0.08);
-			display: block;
-		}
-	}
-
-	/* ── Idle state ── */
-	.idle-state {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
+	.brain-badge,
+	.log-toggle {
+		min-height: 44px;
+		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		padding: 2rem 1.5rem 6rem;
+		border: 1.5px solid var(--color-ink);
+		background: var(--color-paper);
+		color: var(--color-ink);
+		padding: 0 16px;
+		font-size: 13px;
+		font-weight: 800;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	.brain-badge {
+		position: relative;
+		gap: 10px;
+	}
+
+	.brain-badge::after {
+		content: attr(data-tooltip);
+		position: absolute;
+		bottom: -32px;
+		right: -1.5px;
+		background: var(--color-ink);
+		color: var(--color-paper);
+		padding: 4px 8px;
+		font-size: 10px;
+		font-family: var(--font-mono);
+		font-weight: 700;
+		border: 1px solid var(--color-ink);
+		white-space: nowrap;
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition: opacity 150ms ease, visibility 150ms ease;
+		z-index: 50;
+		text-transform: none;
+		letter-spacing: normal;
+	}
+
+	.brain-badge:hover::after {
+		opacity: 1;
+		visibility: visible;
+	}
+
+	.log-toggle {
+		cursor: pointer;
+	}
+
+	.brain-dot {
+		width: 7px;
+		height: 7px;
+		background: rgba(17, 17, 17, 0.25);
+	}
+
+	.brain-dot.active {
+		background: var(--color-mint);
+	}
+
+	.chat-viewport {
+		min-height: 0;
+		overflow-y: auto;
+		overflow-x: hidden;
+		padding: 32px clamp(16px, 4vw, 48px) 40px;
+	}
+
+	.chat-inner {
+		width: 100%;
+		max-width: 840px;
+		margin: 0 auto;
+		display: flex;
+		flex-direction: column;
+		gap: 36px;
+	}
+
+	.chat-run {
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
+
+	.idle-stack {
+		min-height: 100%;
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-start;
+		gap: 18px;
+		padding-top: max(44px, calc(43vh - 190px));
+	}
+
+	.idle-copy {
 		text-align: center;
 	}
 
-	.idle-mascot {
-		margin-bottom: 1.5rem;
+	.idle-heading-row {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 12px;
 	}
 
-	.cube-line-mini {
-		fill: var(--color-paper);
-		stroke: #111;
-		stroke-width: 28;
-		stroke-linejoin: miter;
-		stroke-miterlimit: 10;
+	.idle-mark {
+		width: 46px;
+		height: 46px;
+		object-fit: contain;
 	}
 
 	.idle-heading {
-		font-family: var(--font-display);
-		font-size: clamp(2rem, 5vw, 3.2rem);
-		font-weight: 800;
-		line-height: 1;
-		letter-spacing: -0.01em;
+		margin: 0;
+		font-size: clamp(1.9rem, 4vw, 3rem);
+		line-height: 1.06;
+		font-weight: 600;
+		letter-spacing: 0;
 	}
 
-	.idle-subtext {
-		margin-top: 0.75rem;
-		font-family: var(--font-body);
-		font-size: 1rem;
-		color: rgba(17, 17, 17, 0.55);
-		font-weight: 500;
-		max-width: 28rem;
+	.idle-subcopy {
+		margin: 8px 0 0;
+		color: rgba(17, 17, 17, 0.58);
+		font-size: 0.98rem;
+		font-weight: 600;
 	}
 
-	/* ── Prompt cards ── */
-	.prompt-cards {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-		gap: 0.75rem;
-		margin-top: 2rem;
-		width: 100%;
-		max-width: 42rem;
-	}
-
-	.prompt-card {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.65rem;
-		padding: 1rem;
-		border: 1px solid rgba(17, 17, 17, 0.18);
-		background: white;
-		text-align: left;
-		cursor: pointer;
-		transition:
-			border-color 150ms,
-			transform 100ms;
-	}
-
-	.prompt-card:hover {
-		border-color: var(--color-ink);
-		transform: translateY(-1px);
-	}
-
-	.prompt-card-marker {
-		flex-shrink: 0;
-		font-family: var(--font-mono);
-		font-size: 1rem;
-		font-weight: 700;
-		color: rgba(17, 17, 17, 0.3);
-		line-height: 1;
-		margin-top: 0.15rem;
-	}
-
-	.prompt-card-title {
-		font-family: var(--font-display);
-		font-size: 0.875rem;
-		font-weight: 700;
-		line-height: 1.3;
-	}
-
-	.prompt-card-text {
-		font-family: var(--font-body);
-		font-size: 0.75rem;
-		color: rgba(17, 17, 17, 0.55);
-		margin-top: 0.15rem;
-		line-height: 1.4;
-		font-weight: 500;
-	}
-
-	/* ── Chat ── */
-	.chat-area {
-		flex: 1;
+	.idle-bottom {
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-		padding: 1.5rem 1rem 6rem;
-		max-width: 48rem;
-		margin: 0 auto;
-		width: 100%;
+		gap: 0;
 	}
 
-	.chat-msg {
+	.messages-list {
+		display: flex;
+		flex-direction: column;
+		gap: 36px;
+		padding: 8px 0 26px;
+	}
+
+	.msg-row {
 		display: flex;
 	}
 
-	.chat-msg--user {
+	.msg-user {
 		justify-content: flex-end;
 	}
 
-	.chat-msg--blep {
+	.msg-blep {
 		justify-content: flex-start;
 	}
 
-	.chat-bubble-user {
-		max-width: 80%;
-		border: 1px solid var(--color-ink);
+	.msg-bubble-user {
+		max-width: 720px;
 		background: var(--color-ink);
-		color: white;
-		padding: 0.625rem 0.875rem;
-		font-family: var(--font-body);
-		font-size: 0.875rem;
-		font-weight: 500;
-		line-height: 1.5;
+		color: var(--color-paper);
+		padding: 14px 20px;
+		font-size: 0.96rem;
+		font-weight: 600;
+		line-height: 1.45;
 	}
 
-	.chat-bubble-blep {
-		max-width: 80%;
-		border: 1px solid rgba(17, 17, 17, 0.15);
-		background: white;
-		padding: 0.625rem 0.875rem;
-		font-family: var(--font-body);
-		font-size: 0.875rem;
-		font-weight: 500;
-		line-height: 1.5;
+	.msg-bubble-user p,
+	.msg-blep-content {
+		margin: 0;
+		white-space: pre-wrap;
 	}
 
-	.chat-label-blep {
+	.msg-blep-block {
+		max-width: min(78%, 620px);
+	}
+
+	.msg-blep-label,
+	.result-label {
 		display: block;
-		font-family: var(--font-mono);
-		font-size: 9px;
-		font-weight: 700;
+		margin-bottom: 4px;
+		color: rgba(17, 17, 17, 0.45);
+		font-size: 10px;
+		font-weight: 800;
+		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: rgba(17, 17, 17, 0.4);
-		margin-bottom: 0.25rem;
 	}
 
-	/* ── Mobile thinking panel ── */
-	.mobile-thinking-panel {
-		border: 1px solid rgba(17, 17, 17, 0.12);
-		background: var(--color-paper-dark);
-		margin: 0.5rem 0;
+	.msg-blep-content {
+		color: var(--color-ink);
+		font-size: 0.96rem;
+		font-weight: 600;
+		line-height: 1.55;
 	}
 
-	/* ── Result card ── */
+	.thinking {
+		color: rgba(17, 17, 17, 0.54);
+	}
+
 	.result-card {
-		max-width: 48rem;
-		width: 100%;
-	}
-
-	.result-card-inner {
+		width: min(100%, 720px);
 		border: 2px solid var(--color-ink);
 		background: white;
-		padding: 1.5rem;
+		padding: 28px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
 	}
 
 	.result-header {
 		display: flex;
-		flex-wrap: wrap;
 		align-items: flex-start;
 		justify-content: space-between;
-		gap: 0.75rem;
-		margin-bottom: 1.25rem;
-		padding-bottom: 1rem;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.12);
+		gap: 12px;
+		border-bottom: 1px solid rgba(17, 17, 17, 0.1);
+		padding-bottom: 12px;
 	}
 
-	.result-device-name {
-		font-family: var(--font-display);
-		font-size: clamp(1.25rem, 3vw, 1.75rem);
+	.result-title {
+		margin: 0;
+		font-size: 1.05rem;
 		font-weight: 800;
-		line-height: 1.15;
 	}
 
-	.result-meta {
-		font-family: var(--font-mono);
-		font-size: 10px;
-		font-weight: 600;
-		color: rgba(17, 17, 17, 0.5);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		margin-top: 0.25rem;
-	}
-
-	.verdict-stamp {
-		font-family: var(--font-display);
-		font-size: 0.8125rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		padding: 0.35rem 0.75rem;
-		transform: rotate(-2deg);
-		flex-shrink: 0;
-		box-shadow: 3px 3px 0 0 rgba(17, 17, 17, 0.9);
-	}
-
-	.verdict-stamp-small {
-		font-family: var(--font-mono);
-		font-size: 9px;
-		font-weight: 700;
-		text-transform: uppercase;
-		padding: 2px 6px;
-		letter-spacing: 0.04em;
-	}
-
-	.result-label {
-		display: block;
-		font-family: var(--font-mono);
-		font-size: 9px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: rgba(17, 17, 17, 0.45);
-		margin-bottom: 0.3rem;
-	}
-
-	.result-fatal-flaw {
-		margin-bottom: 1rem;
-	}
-
-	.result-fatal-flaw p {
-		font-family: var(--font-body);
-		font-size: 0.9375rem;
-		font-weight: 600;
-		line-height: 1.5;
-	}
-
-	.result-roast {
-		border-left: 3px solid var(--color-ink);
-		padding-left: 0.875rem;
-		font-family: var(--font-body);
-		font-size: 0.875rem;
-		font-style: italic;
-		line-height: 1.6;
-		color: rgba(17, 17, 17, 0.75);
-		margin-bottom: 1rem;
-	}
-
-	.result-summary {
-		font-family: var(--font-body);
-		font-size: 0.875rem;
-		font-weight: 500;
-		line-height: 1.6;
-		color: rgba(17, 17, 17, 0.7);
-		margin-bottom: 1rem;
-	}
-
-	.result-better-target {
-		margin-bottom: 1rem;
-		padding: 0.75rem;
-		background: var(--color-paper-dark);
-		border: 1px solid rgba(17, 17, 17, 0.08);
-	}
-
-	.result-better-target p {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		line-height: 1.5;
-	}
-
-	.result-specs-row {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.result-spec-chip {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid rgba(17, 17, 17, 0.12);
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-	}
-
-	.result-specs-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-		gap: 0.5rem;
-		margin-bottom: 1.25rem;
-	}
-
-	.result-spec-item {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid rgba(17, 17, 17, 0.1);
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-	}
-
-	.result-evidence {
-		margin-bottom: 1rem;
-	}
-
-	.evidence-item {
-		padding: 0.5rem 0;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.06);
-	}
-
-	.evidence-quote {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-style: italic;
-		color: rgba(17, 17, 17, 0.65);
-		line-height: 1.5;
-	}
-
-	.evidence-relevance {
-		font-family: var(--font-mono);
-		font-size: 10px;
-		color: rgba(17, 17, 17, 0.4);
-		margin-top: 0.2rem;
-	}
-
-	.result-confidence {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-top: 0.75rem;
-		padding-top: 0.75rem;
-		border-top: 1px solid rgba(17, 17, 17, 0.08);
-	}
-
-	/* ── Recommendation-specific ── */
-	.result-picks {
-		margin-bottom: 1.25rem;
-	}
-
-	.pick-card {
-		border: 1px solid rgba(17, 17, 17, 0.15);
-		padding: 0.75rem;
-		margin-top: 0.5rem;
-		background: white;
-	}
-
-	.pick-header {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-bottom: 0.35rem;
-	}
-
-	.pick-name {
-		font-family: var(--font-display);
-		font-size: 0.9375rem;
-		font-weight: 700;
-	}
-
-	.pick-label {
-		font-family: var(--font-mono);
-		font-size: 9px;
-		font-weight: 700;
-		text-transform: uppercase;
-		color: rgba(17, 17, 17, 0.45);
-		letter-spacing: 0.05em;
-	}
-
-	.pick-why {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		line-height: 1.5;
-		color: rgba(17, 17, 17, 0.7);
-	}
-
-	.pick-caveat {
-		font-family: var(--font-mono);
-		font-size: 10px;
-		color: rgba(17, 17, 17, 0.4);
-		margin-top: 0.25rem;
-	}
-
-	.result-avoid-rules {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 1rem;
-		margin-bottom: 1.25rem;
-	}
-
-	.avoid-item {
-		padding: 0.5rem 0;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.06);
-	}
-
-	.avoid-item strong {
-		font-family: var(--font-display);
-		font-size: 0.8125rem;
-		font-weight: 700;
-		display: block;
-	}
-
-	.avoid-item p {
-		font-family: var(--font-body);
+	.result-badge {
+		border: 1.5px solid var(--color-ink);
+		padding: 4px 9px;
 		font-size: 0.75rem;
-		color: rgba(17, 17, 17, 0.55);
-		margin-top: 0.1rem;
-		line-height: 1.4;
+		font-weight: 800;
+		letter-spacing: 0.05em;
+		white-space: nowrap;
+		box-shadow: 2px 2px 0 rgba(17, 17, 17, 0.88);
 	}
 
-	.deal-rules-list {
-		list-style: decimal;
-		padding-left: 1.125rem;
-	}
-
-	.deal-rules-list li {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		line-height: 1.5;
-		padding: 0.25rem 0;
-		color: rgba(17, 17, 17, 0.7);
-	}
-
-	.result-next-action {
-		padding: 0.75rem;
-		background: var(--color-paper-dark);
-		border: 1px solid rgba(17, 17, 17, 0.08);
-	}
-
-	.result-next-action p {
-		font-family: var(--font-body);
-		font-size: 0.875rem;
-		font-weight: 600;
-		line-height: 1.5;
-	}
-
-	/* ── Comparison ── */
-	.comparison-grid {
+	.result-grid,
+	.compare-grid {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.75rem;
-		margin-bottom: 1rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 12px;
 	}
 
-	.comparison-card {
-		border: 1px solid rgba(17, 17, 17, 0.15);
-		padding: 0.875rem;
-	}
-
-	.comparison-card-header {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
-		padding-bottom: 0.5rem;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.08);
-	}
-
-	.comparison-lists {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.comparison-plus {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: rgba(17, 17, 17, 0.7);
+	.result-copy,
+	.result-strong {
+		margin: 0;
+		font-size: 0.9rem;
 		line-height: 1.5;
 	}
 
-	.comparison-minus {
-		font-family: var(--font-body);
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: rgba(17, 17, 17, 0.5);
-		line-height: 1.5;
+	.result-copy {
+		color: rgba(17, 17, 17, 0.76);
+		font-weight: 600;
 	}
 
-	/* ── New scan button ── */
-	.new-scan-btn {
-		display: block;
-		width: 100%;
-		margin-top: 0.75rem;
-		padding: 0.625rem;
-		border: 1px solid rgba(17, 17, 17, 0.2);
-		background: transparent;
-		font-family: var(--font-display);
-		font-size: 0.8125rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		cursor: pointer;
-		transition:
-			background-color 120ms,
-			border-color 120ms;
+	.result-strong {
+		color: var(--color-ink);
+		font-weight: 800;
 	}
 
-	.new-scan-btn:hover {
-		background: var(--color-ink);
-		color: white;
+	.result-list {
+		margin: 0;
+		padding-left: 18px;
+		color: rgba(17, 17, 17, 0.78);
+		font-size: 0.86rem;
+		font-weight: 600;
+		line-height: 1.45;
+	}
+
+	.result-action,
+	.compare-col {
+		border: 1px solid rgba(17, 17, 17, 0.16);
+		background: var(--color-paper);
+		padding: 12px;
+	}
+
+	.result-action.winner {
+		background: var(--color-mint);
 		border-color: var(--color-ink);
 	}
 
-	/* ── Tool steps ── */
-	.tool-steps-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	.compare-name {
+		margin: 0 0 8px;
+		font-size: 0.92rem;
+		font-weight: 800;
 	}
 
-	.tool-step {
-		padding: 0.625rem 0.875rem;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.06);
-		transition: opacity 200ms;
-	}
-
-	.tool-step--done {
-		opacity: 0.55;
-	}
-
-	.tool-step-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-	}
-
-	.tool-step-name {
-		font-family: var(--font-mono);
-		font-size: 11px;
-		font-weight: 700;
-		color: var(--color-ink);
-	}
-
-	.tool-step-badge {
-		font-family: var(--font-mono);
-		font-size: 9px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		padding: 1px 5px;
-	}
-
-	.badge-queued {
-		color: rgba(17, 17, 17, 0.35);
-		border: 1px solid rgba(17, 17, 17, 0.12);
-	}
-
-	.badge-running {
-		color: var(--color-ink);
-		border: 1px solid var(--color-ink);
-		animation: badge-pulse 1.2s ease-in-out infinite;
-	}
-
-	.badge-done {
-		color: rgba(17, 17, 17, 0.4);
-		background: rgba(17, 17, 17, 0.06);
-		border: 1px solid rgba(17, 17, 17, 0.06);
-	}
-
-	.tool-step-label {
-		font-family: var(--font-body);
-		font-size: 11px;
-		font-weight: 500;
-		color: rgba(17, 17, 17, 0.5);
-		margin-top: 0.15rem;
-		line-height: 1.4;
-	}
-
-	.tool-step-output {
-		font-family: var(--font-mono);
-		font-size: 10px;
-		font-weight: 600;
-		color: rgba(17, 17, 17, 0.4);
-		margin-top: 0.25rem;
-	}
-
-	/* ── Composer ── */
 	.composer-dock {
 		position: sticky;
 		bottom: 0;
-		padding: 0.75rem 1rem 0.875rem;
-		background: linear-gradient(to bottom, transparent, var(--color-paper) 30%);
-		flex-shrink: 0;
+		z-index: 25;
+		border-top: 1px solid rgba(17, 17, 17, 0.12);
+		background: var(--color-paper);
+		padding: 18px clamp(16px, 4vw, 48px);
 	}
 
-	.composer-inner {
-		max-width: 48rem;
+	.composer-wrap {
+		box-sizing: border-box;
+		width: 100%;
+		max-width: 840px;
 		margin: 0 auto;
-		border: 1px solid rgba(17, 17, 17, 0.25);
-		background: white;
-		display: flex;
-		flex-direction: column;
-		transition: border-color 150ms;
 	}
 
-	.composer-inner:focus-within {
-		border-color: var(--color-ink);
+	.composer-box {
+		box-sizing: border-box;
+		width: 100%;
+		border: 2px solid var(--color-ink);
+		background: white;
+		padding: 10px;
+	}
+
+	.composer-box:focus-within {
+		box-shadow: 3px 3px 0 rgba(17, 17, 17, 0.9);
 	}
 
 	.composer-textarea {
-		font-family: var(--font-body);
-		font-size: 0.9375rem;
-		font-weight: 500;
-		line-height: 1.5;
-		padding: 0.75rem 0.875rem 0.25rem;
-		border: none;
-		background: transparent;
+		width: 100%;
+		min-height: 80px;
 		resize: none;
-		outline: none;
-		min-height: 2.5rem;
-		max-height: 8rem;
+		border: 0;
+		background: transparent;
 		color: var(--color-ink);
-		field-sizing: content;
+		outline: 0;
+		padding: 12px;
+		font-size: 1.05rem;
+		font-weight: 600;
+		line-height: 1.5;
 	}
 
 	.composer-textarea::placeholder {
-		color: rgba(17, 17, 17, 0.35);
+		color: rgba(17, 17, 17, 0.5);
 	}
 
 	.composer-textarea:disabled {
-		opacity: 0.5;
 		cursor: not-allowed;
+		opacity: 0.58;
 	}
 
-	.composer-actions {
+	.composer-actions-row {
+		display: flex;
+		justify-content: flex-end;
+		padding-top: 8px;
+	}
+
+	.composer-chips-under {
+		margin-top: 14px;
+	}
+
+	.mode-chips {
 		display: flex;
 		align-items: center;
-		justify-content: flex-end;
-		gap: 0.5rem;
-		padding: 0.35rem 0.5rem;
+		gap: 6px;
+		min-width: 0;
+		flex-wrap: wrap;
 	}
 
-	.try-sample-btn {
-		font-family: var(--font-mono);
-		font-size: 10px;
+	.mode-chip {
+		flex: 1 1 96px;
+		min-height: 38px;
+		border: 1px solid rgba(17, 17, 17, 0.15);
+		background: transparent;
+		color: rgba(17, 17, 17, 0.65);
+		padding: 0 10px;
+		font-size: 0.75rem;
 		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: rgba(17, 17, 17, 0.45);
-		background: none;
-		border: 1px solid rgba(17, 17, 17, 0.12);
-		padding: 0.3rem 0.5rem;
 		cursor: pointer;
+		border-radius: 4px;
 		transition:
-			border-color 120ms,
-			color 120ms;
+			background 160ms ease,
+			border-color 160ms ease,
+			color 160ms ease;
 	}
 
-	.try-sample-btn:hover {
+	.mode-chip:hover,
+	.mode-chip:focus-visible {
+		border-color: var(--color-ink);
+		color: var(--color-ink);
+		outline: 2px solid #111;
+		outline-offset: 2px;
+	}
+
+	.mode-chip.selected {
+		border-color: var(--color-ink);
+		background: var(--color-ink);
+		color: var(--color-paper);
+	}
+
+	.composer-secondary,
+	.composer-primary {
+		min-width: 112px;
+	}
+
+	.composer-disclaimer {
+		margin: 8px 0 0;
+		color: rgba(17, 17, 17, 0.48);
+		text-align: center;
+		font-size: 0.76rem;
+		font-weight: 600;
+	}
+
+	.activity-panel {
+		min-width: 0;
+		border-left: 1px solid rgba(17, 17, 17, 0.12);
+		background: #f7f5ef;
+		overflow-y: auto;
+	}
+
+	.activity-inner {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.activity-header {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background: #f7f5ef;
+		min-height: 64px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 10px 14px;
+		border-bottom: 1px solid rgba(17, 17, 17, 0.1);
+	}
+
+	.activity-title {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 800;
+	}
+
+	.activity-subtitle {
+		margin: 2px 0 0;
+		color: rgba(17, 17, 17, 0.45);
+		font-size: 10px;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.panel-close {
+		border: 0;
+		font-size: 24px;
+		line-height: 1;
+	}
+
+	.activity-body {
+		flex: 1;
+		min-height: 0;
+	}
+
+	.activity-empty {
+		min-height: 220px;
+		display: grid;
+		place-items: center;
+		align-content: center;
+		gap: 12px;
+		padding: 20px;
+		text-align: center;
+	}
+
+	.activity-empty-line {
+		width: 36px;
+		height: 1px;
+		background: rgba(17, 17, 17, 0.18);
+	}
+
+	.activity-empty-text {
+		margin: 0;
+		color: rgba(17, 17, 17, 0.38);
+		font-size: 10px;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.activity-steps {
+		list-style: none;
+		margin: 0;
+		padding: 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.activity-step.step-done {
+		opacity: 0.58;
+	}
+
+	.activity-step-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+	}
+
+	.activity-step-name {
+		color: var(--color-ink);
+		font-size: 11px;
+		font-weight: 800;
+	}
+
+	.activity-step-status {
+		border: 1px solid rgba(17, 17, 17, 0.18);
+		padding: 1px 6px;
+		color: rgba(17, 17, 17, 0.48);
+		font-size: 9px;
+		font-weight: 800;
+		text-transform: uppercase;
+	}
+
+	.activity-step-status.step-running {
 		border-color: var(--color-ink);
 		color: var(--color-ink);
 	}
 
-	.judge-btn {
-		font-family: var(--font-display);
-		font-size: 0.8125rem;
-		font-weight: 700;
-		letter-spacing: 0.02em;
-		padding: 0.4rem 1rem;
-		border: 1px solid var(--color-ink);
-		background: var(--color-ink);
-		color: white;
-		cursor: pointer;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		transition:
-			background-color 120ms,
-			opacity 120ms;
+	.activity-step-label {
+		margin: 3px 0 0;
+		color: rgba(17, 17, 17, 0.6);
+		font-size: 12px;
+		font-weight: 600;
+		line-height: 1.35;
 	}
 
-	.judge-btn:hover:not(:disabled) {
+	.activity-step-output {
+		margin: 5px 0 0;
+		color: rgba(17, 17, 17, 0.44);
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 1.4;
+	}
+
+	:global(.verdict-approved) {
+		background: var(--color-mint);
+		color: var(--color-ink);
+	}
+
+	:global(.verdict-caution) {
+		background: #ffe566;
+		color: var(--color-ink);
+	}
+
+	:global(.verdict-waste) {
+		background: var(--color-ink);
+		color: var(--color-paper);
+	}
+
+	:global(.verdict-recommendation) {
+		background: var(--color-paper-dark);
+		color: var(--color-ink);
+	}
+
+	:global(.verdict-default) {
 		background: white;
 		color: var(--color-ink);
 	}
 
-	.judge-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.judge-btn-spinner {
-		display: inline-block;
-		width: 0.75rem;
-		height: 0.75rem;
-		border: 2px solid rgba(255, 255, 255, 0.3);
-		border-top-color: white;
-		border-radius: 50%;
-		animation: spinner-spin 0.6s linear infinite;
-	}
-
-	/* ── Utility ── */
 	.sr-only {
 		position: absolute;
 		width: 1px;
 		height: 1px;
+		padding: 0;
+		margin: -1px;
 		overflow: hidden;
-		clip-path: inset(50%);
+		clip: rect(0, 0, 0, 0);
 		white-space: nowrap;
+		border: 0;
 	}
 
-	/* ── Keyframes ── */
-	@keyframes badge-pulse {
-		0%,
-		100% {
-			opacity: 1;
+	@media (max-width: 980px) {
+		.app-shell {
+			grid-template-columns: 68px minmax(0, 1fr);
 		}
-		50% {
-			opacity: 0.5;
+
+		.sidebar {
+			align-items: center;
+		}
+
+		.sidebar-brand {
+			padding-inline: 0;
+		}
+
+		.sidebar-toggle,
+		.sidebar-label,
+		.history-copy,
+		.sidebar-new span + span {
+			display: none;
+		}
+
+		.sidebar-new {
+			width: 44px;
+			margin-inline: 0;
+		}
+
+		.sidebar-history-item {
+			justify-content: center;
+			align-items: center;
+			padding: 10px 0;
+		}
+
+		.history-dot {
+			width: 16px;
+			height: 16px;
+			margin: 0;
+		}
+
+		.activity-panel {
+			position: fixed;
+			top: 0;
+			right: 0;
+			z-index: 30;
+			width: min(320px, calc(100vw - 68px));
+			height: 100dvh;
+			min-height: 0;
+			box-shadow: -8px 0 24px rgba(17, 17, 17, 0.12);
 		}
 	}
 
-	@keyframes spinner-spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	/* ── Desktop ── */
-	@media (min-width: 1024px) {
-		.app-sidebar-left {
-			display: block;
-		}
-		.app-sidebar-right {
-			display: block;
-		}
-	}
-
-	/* ── Small mobile ── */
-	@media (max-width: 480px) {
-		.prompt-cards {
+	@media (max-width: 760px) {
+		.result-grid,
+		.compare-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.result-avoid-rules {
-			grid-template-columns: 1fr;
+		.main-actions {
+			padding-inline: 10px;
+			gap: 6px;
 		}
 
-		.comparison-grid {
-			grid-template-columns: 1fr;
+		.chat-viewport {
+			padding: 18px 12px;
 		}
 
-		.result-specs-row {
-			grid-template-columns: 1fr;
+		.idle-stack {
+			justify-content: flex-start;
+			padding-top: 36px;
 		}
-	}
 
-	/* ── Reduced motion ── */
-	@media (prefers-reduced-motion: reduce) {
-		*,
-		*::before,
-		*::after {
-			animation-duration: 0.001ms !important;
-			animation-iteration-count: 1 !important;
-			transition-duration: 0.001ms !important;
+		.idle-heading-row {
+			align-items: flex-start;
+			gap: 9px;
+		}
+
+		.idle-mark {
+			width: 36px;
+			height: 36px;
+			margin-top: 3px;
+		}
+
+		.idle-heading {
+			font-size: 2rem;
+			text-align: left;
+		}
+
+		.idle-subcopy {
+			text-align: left;
+		}
+
+		.msg-bubble-user,
+		.msg-blep-block {
+			max-width: 92%;
+		}
+
+		.composer-actions-row {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.mode-chips {
+			width: 100%;
+			overflow-x: auto;
+			padding-bottom: 2px;
+			flex-wrap: nowrap;
+		}
+
+		.mode-chip {
+			flex: 0 0 auto;
+		}
+
+		.composer-primary {
+			width: 100%;
+			min-width: 0;
 		}
 	}
 </style>

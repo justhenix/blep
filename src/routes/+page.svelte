@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { spring } from 'svelte/motion';
 	import { fade } from 'svelte/transition';
 
@@ -108,67 +107,44 @@
 
 	// Timeline scroll observer — track which step is closest to viewport center
 	onMount(() => {
-		if (typeof IntersectionObserver === 'undefined') return;
+		// Force scroll to hash if present on load (fixes SvelteKit cross-page hash navigation)
+		if (window.location.hash) {
+			const target = document.querySelector(window.location.hash);
+			if (target) {
+				setTimeout(() => {
+					target.scrollIntoView({ behavior: 'smooth' });
+				}, 50);
+			}
+		}
 
-		const visible = new SvelteSet<number>();
-
-		const pickClosest = () => {
-			if (visible.size === 0) return;
-			const mid = window.innerHeight / 2;
+		const updateIndicatorPosition = () => {
+			if (!spineEl || stepEls.length === 0) return;
+			
+			// 1. Calculate active step based on viewport position
+			// Use an activation line a bit above center (0.4) to favor items we are scrolling to
+			const mid = window.innerHeight * 0.4;
 			let best = activeStep;
 			let bestDist = Infinity;
-			for (const idx of visible) {
-				const el = stepEls[idx];
+			for (let i = 0; i < stepEls.length; i++) {
+				const el = stepEls[i];
 				if (!el) continue;
 				const rect = el.getBoundingClientRect();
 				const center = rect.top + rect.height / 2;
 				const dist = Math.abs(center - mid);
 				if (dist < bestDist) {
 					bestDist = dist;
-					best = idx;
+					best = i;
 				}
 			}
-			activeStep = best;
-		};
+			if (activeStep !== best) activeStep = best;
 
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					const idx = stepEls.indexOf(entry.target as HTMLElement);
-					if (idx === -1) continue;
-					if (entry.isIntersecting) visible.add(idx);
-					else visible.delete(idx);
-				}
-				pickClosest();
-			},
-			{ rootMargin: '-40% 0px -40% 0px' }
-		);
-
-		for (const el of stepEls) observer.observe(el);
-
-		// Dynamic active indicator top calculation
-		const updateIndicatorPosition = () => {
-			if (!spineEl || stepEls.length === 0) return;
-			const firstStep = stepEls[0];
-			const lastStep = stepEls[stepEls.length - 1];
-			if (!firstStep || !lastStep) return;
-
+			// 2. Snap the indicator exactly to the center of the active step
+			const activeEl = stepEls[activeStep];
+			if (!activeEl) return;
 			const spineRect = spineEl.getBoundingClientRect();
 			const spineTop = spineRect.top + window.scrollY;
-
-			// We calculate the Y positions of the vertical center of the first and last cards
-			const firstStepRect = firstStep.getBoundingClientRect();
-			const lastStepRect = lastStep.getBoundingClientRect();
-
-			const yStart = firstStepRect.top + firstStepRect.height / 2 + window.scrollY - spineTop;
-			const yEnd = lastStepRect.top + lastStepRect.height / 2 + window.scrollY - spineTop;
-
-			// The indicator follows the exact center of the viewport
-			const viewportCenter = window.scrollY + window.innerHeight / 2;
-			const centerRelativeToSpine = viewportCenter - spineTop;
-
-			// Clamp it between the first and last step centers
-			const targetY = Math.max(yStart, Math.min(centerRelativeToSpine, yEnd));
+			const activeRect = activeEl.getBoundingClientRect();
+			const targetY = activeRect.top + activeRect.height / 2 + window.scrollY - spineTop;
 
 			if (indicatorEl) {
 				indicatorEl.style.top = `${targetY}px`;
@@ -186,7 +162,6 @@
 		const initialTimeout = setTimeout(updateIndicatorPosition, 100);
 
 		return () => {
-			observer.disconnect();
 			window.removeEventListener('scroll', handleScroll);
 			window.removeEventListener('resize', handleScroll);
 			clearTimeout(initialTimeout);
@@ -208,7 +183,7 @@
 	onmousemove={handleMouseMove}
 />
 
-<main class="flex-grow">
+<main class="grow">
 	<!-- ═══════════════ HERO ═══════════════ -->
 	<section
 		id="top"
@@ -378,8 +353,8 @@
 	</section>
 
 	<section
-		id="how-it-works"
-		class="border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+		id="flow"
+		class="scroll-mt-20 border-y border-ink/15 bg-paper px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
 	>
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="mb-16 text-center">
@@ -424,7 +399,7 @@
 	</section>
 
 	<!-- ═══════════════ FAQ ═══════════════ -->
-	<section id="why-blep" class="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+	<section id="faq" class="scroll-mt-20 px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
 		<div class="mx-auto w-full max-w-300 min-w-0">
 			<div class="grid gap-12 lg:grid-cols-[1fr_1.5fr] lg:gap-16">
 				<!-- Left Column -->

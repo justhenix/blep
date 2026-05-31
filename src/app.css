@@ -89,6 +89,18 @@
 	--color-mint: #3dffc2;
 }
 
+.font-display {
+	font-family: var(--font-display);
+}
+
+.font-body {
+	font-family: var(--font-body);
+}
+
+.font-mono-ui {
+	font-family: var(--font-mono);
+}
+
 html {
 	scroll-behavior: smooth;
 	background: #fbfaf6;
@@ -117,5 +129,135 @@ textarea {
 @supports (text-wrap: balance) {
 	.text-balance {
 		text-wrap: balance;
+	}
+}
+
+@layer components {
+	.uiButtonPrimary {
+		@apply flex cursor-pointer items-center justify-center border-2 border-ink bg-ink font-display font-bold tracking-wide text-paper transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+		min-height: 44px;
+		padding: 0 1.25rem;
+		font-size: 0.875rem;
+	}
+	.uiButtonPrimary:hover:not(:disabled) {
+		@apply bg-paper text-ink;
+	}
+
+	.uiButtonSecondary {
+		@apply flex cursor-pointer items-center justify-center border-2 border-ink bg-paper font-display font-bold tracking-wide text-ink transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+		min-height: 44px;
+		padding: 0 1.25rem;
+		font-size: 0.875rem;
+	}
+	.uiButtonSecondary:hover:not(:disabled) {
+		@apply bg-ink text-paper;
+	}
+
+	.uiButtonGhost {
+		@apply cursor-pointer bg-transparent font-display font-bold tracking-wide text-ink transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+		min-height: 44px;
+		padding: 0 1.25rem;
+		font-size: 0.875rem;
+	}
+	.uiButtonGhost:hover:not(:disabled) {
+		@apply text-ink/70;
+	}
+
+	.uiInput {
+		@apply resize-none border-none bg-transparent font-body text-[0.9375rem] text-ink outline-none placeholder:text-ink/40;
+	}
+
+	.uiPanel {
+		@apply border-2 border-ink bg-white p-6;
+	}
+
+	.uiLabel {
+		@apply mb-1 block font-mono text-[10px] font-bold tracking-[0.08em] text-ink/45 uppercase;
+	}
+
+	.uiMono {
+		@apply font-mono text-xs font-semibold text-ink;
+	}
+
+	.uiHeading {
+		@apply font-display font-bold text-ink;
+	}
+
+	.uiBody {
+		@apply font-body font-medium text-ink;
+	}
+
+	/* ── App page button system ────────────────────────── */
+
+	.btnPrimary {
+		@apply flex cursor-pointer items-center justify-center border-2 border-ink bg-ink font-display font-bold tracking-wide text-paper transition-colors;
+		min-height: 44px;
+		padding: 0 1.125rem;
+		font-size: 0.875rem;
+	}
+	.btnPrimary:hover:not(:disabled) {
+		@apply bg-paper text-ink;
+	}
+	.btnPrimary:focus-visible {
+		outline: 2px solid #111;
+		outline-offset: 2px;
+	}
+	.btnPrimary:disabled {
+		@apply cursor-not-allowed opacity-40;
+	}
+
+	.btnSecondary {
+		@apply flex cursor-pointer items-center justify-center border-2 border-ink bg-paper font-display font-bold tracking-wide text-ink transition-colors;
+		min-height: 44px;
+		padding: 0 1.125rem;
+		font-size: 0.875rem;
+	}
+	.btnSecondary:hover:not(:disabled) {
+		@apply bg-ink text-paper;
+	}
+	.btnSecondary:focus-visible {
+		outline: 2px solid #111;
+		outline-offset: 2px;
+	}
+	.btnSecondary:disabled {
+		@apply cursor-not-allowed opacity-40;
+	}
+
+	.btnIcon {
+		@apply flex cursor-pointer items-center justify-center bg-transparent text-ink transition-colors;
+		min-height: 44px;
+		min-width: 44px;
+	}
+	.btnIcon:hover:not(:disabled) {
+		background: rgba(17, 17, 17, 0.05);
+	}
+	.btnIcon:focus-visible {
+		outline: 2px solid #111;
+		outline-offset: 2px;
+	}
+	.btnIcon:disabled {
+		@apply cursor-not-allowed opacity-40;
+	}
+
+	.btnGhost {
+		@apply flex cursor-pointer items-center justify-center bg-transparent font-display font-bold tracking-wide text-ink transition-colors;
+		min-height: 44px;
+		padding: 0 1.125rem;
+		font-size: 0.875rem;
+	}
+	.btnGhost:hover:not(:disabled) {
+		text-decoration: underline;
+	}
+	.btnGhost:focus-visible {
+		outline: 2px solid #111;
+		outline-offset: 2px;
+	}
+	.btnGhost:disabled {
+		@apply cursor-not-allowed opacity-40;
+	}
+
+	.disclaimer-text {
+		@apply font-body text-xs text-ink/45;
+		text-align: center;
 	}
 }

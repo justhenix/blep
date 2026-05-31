@@ -75,7 +75,6 @@ const whiteScaffold = readFileSync(resolve(ROOT, 'static/logo-w-errs.svg'), 'utf
 //
 //    We'll set tx, ty to center the text on the face.
 
-
 // Face center — center of the right-face parallelogram
 // Vertices: TL(514,390) TR(990,282) BR(994,874) BL(514,1031)
 // Visual center of the parallelogram, slightly biased toward the eyes area

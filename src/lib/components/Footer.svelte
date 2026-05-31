@@ -8,17 +8,15 @@
 	};
 
 	const footerPrimaryLinks: FooterLink[] = [
-		{ label: 'How it works', href: '#how-it-works' },
-		{ label: 'Demo', href: '#demo' },
-		{ label: 'Why BLEP', href: '#why-blep' },
-		{ label: 'Contact', href: 'mailto:hello@blep.local' }
+		{ label: 'Flow', href: '#flow' },
+		{ label: 'FAQ', href: '#faq' },
+		{ label: 'Contact', href: 'https://www.linkedin.com/in/gammarasyad/' },
+		{ label: 'Github', href: 'https://github.com/justhenix/blep' }
 	];
 
 	const footerLegalLinks: FooterLink[] = [
 		{ label: 'Privacy Policy', href: '/privacy' },
-		{ label: 'Terms', href: '/terms' },
-		{ label: 'Judge listing', href: '/app' },
-		{ label: 'Demo verdict', href: '#demo' }
+		{ label: 'Terms', href: '/terms' }
 	];
 
 	let footerInView = $state(false);
@@ -84,7 +82,11 @@
 
 	<nav class="blep-footer__links" aria-label="Footer">
 		<div class="blep-footer__col blep-footer__locale">
-			<a class="footer-link focus-visible-ring" href={toLandingHref('#top')}>
+			<button
+				class="footer-link focus-visible-ring"
+				type="button"
+				onclick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+			>
 				<svg
 					class="blep-footer__locale-arrow"
 					viewBox="0 0 24 24"
@@ -101,12 +103,19 @@
 					/>
 				</svg>
 				<span>Top</span>
-			</a>
+			</button>
 		</div>
 
 		<div class="blep-footer__col">
 			{#each footerPrimaryLinks as link (link.label)}
-				<a class="footer-link focus-visible-ring" href={toHref(link.href)}>{link.label}</a>
+				<a
+					class="footer-link focus-visible-ring"
+					href={toHref(link.href)}
+					target={link.href.startsWith('http') ? '_blank' : null}
+					rel={link.href.startsWith('http') ? 'noopener noreferrer' : null}
+				>
+					{link.label}
+				</a>
 			{/each}
 		</div>
 
