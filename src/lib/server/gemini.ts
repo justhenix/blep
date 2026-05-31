@@ -416,5 +416,38 @@ export const generatePhase1 = async (
 	}
 };
 
+/**
+ * Phase 2 — simple single-turn Gemini call for follow-up chat.
+ * No response schema enforcement. Returns raw text.
+ * Uses cheapest model (geminiModelMain).
+ */
+export const generatePhase2Chat = async (
+	systemPrompt: string,
+	userContent: string
+): Promise<string> => {
+	const ai = getClient();
+	const model = blepEnv.geminiModelMain;
+
+	const response = await ai.models.generateContent({
+		model,
+		contents: userContent,
+		config: {
+			systemInstruction: systemPrompt,
+			temperature: 0.3,
+			candidateCount: 1,
+			maxOutputTokens: 600
+		}
+	});
+
+	const text = response.text;
+	if (!text) {
+		throw new GeminiVerdictError('gemini_failed', 'call');
+	}
+
+	console.info(`[blep gemini] phase2 model=${model} call=ok`);
+
+	return text;
+};
+
 export const getGeminiErrorCode = (error: unknown): GeminiFailureCode =>
 	error instanceof GeminiVerdictError ? error.code : 'gemini_failed';

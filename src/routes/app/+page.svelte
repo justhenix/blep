@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
+	import FollowUpChat from '$lib/components/FollowUpChat.svelte';
 
 	type Mode = 'idle' | 'running' | 'done';
 	type Intent = 'verdict' | 'recommendation' | 'comparison';
 	type SidebarActiveView = 'new_scan' | 'history';
+
+	type Phase1Json = {
+		mode: string;
+		[key: string]: unknown;
+	};
 
 	type ChatMessage = {
 		id?: string;
@@ -13,6 +19,7 @@
 		timestamp: number;
 		status?: 'loading' | 'done' | 'error';
 		result?: MockResult | null;
+		phase1Json?: Phase1Json | null;
 	};
 
 	let { data } = $props();
@@ -81,6 +88,18 @@
 	let messages = $state<ChatMessage[]>([]);
 	let toolSteps = $state<ToolStep[]>([]);
 	let brainJuice = $state(3);
+
+	// ── Phase 2 doubt state ──
+	type ComposerMode = 'scan' | 'doubt';
+	type DoubtMsg = { role: 'user' | 'assistant'; content: string };
+	const MAX_DOUBT_TURNS = 5;
+	const DOUBT_CHIPS = ['Why is this bad?', 'Seller says it can game', 'What should I buy instead?', 'Price changed'];
+
+	let composerMode = $state<ComposerMode>('scan');
+	let doubtMessages = $state<DoubtMsg[]>([]);
+	let doubtLoading = $state(false);
+	let doubtError = $state('');
+	let showRescanCta = $state(false);
 
 	let now = $state(new Date());
 
@@ -288,6 +307,71 @@
 		next_action: 'Send both listing links. BLEP will judge final pick.'
 	};
 
+	// ── Mock Phase 1 JSON for doubt chat ──────────────────
+	const MOCK_PHASE1_VERDICT: Phase1Json = {
+		mode: 'VERDICT',
+		name: 'Acer Swift Go 14 Ultra 7',
+		verdict: 'CAUTION',
+		landfill_year: 2029,
+		fatal_flaw: 'Good machine, but price must beat newer OLED/Ultra deals nearby.',
+		specs: {
+			upgradeable: true,
+			thermal: 'Acceptable for ultrabook class',
+			forum_score: 6
+		},
+		roast: 'Decent laptop pretending it is the only option. It is not.',
+		summary: 'Swift Go 14 is capable at 19 juta but buyer must confirm this config beats latest Ultra 5/7 OLED deals.',
+		evidence: [
+			{ title: 'Mock spec review', url: 'https://example.com/review', quote_or_fact: 'Ultra 7 performance is competitive', relevance: 'CPU benchmark' }
+		]
+	};
+
+	const MOCK_PHASE1_RECOMMENDATION: Phase1Json = {
+		mode: 'RECOMMENDATION',
+		query: 'Gaming laptop 15 juta recommendation',
+		parsed_need: {
+			category: 'laptop',
+			use_case: 'gaming',
+			budget_idr: 15000000,
+			market: 'Indonesia',
+			hard_constraints: []
+		},
+		recommendation_summary: 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.',
+		target_specs: { cpu: 'Ryzen 5 H-series', gpu: 'RTX 4050', ram: '16GB', storage: '512GB NVMe', screen: '15.6" 144Hz', thermal: 'Dual-fan', upgradeability: 'RAM slot preferred' },
+		picks: [
+			{ label: 'BEST_OVERALL', name: 'Lenovo LOQ RTX 4050', expected_price_idr: 14500000, why: 'Clean budget entry', caveat: 'Check RAM config', evidence_refs: [0] },
+			{ label: 'CHEAPER_SAFE', name: 'Acer Nitro V RTX 4050', expected_price_idr: 13800000, why: 'Cheaper if available', caveat: 'Watch thermals', evidence_refs: [0] }
+		],
+		avoid: [{ pattern: 'RTX 2050 above 10-11 juta', reason: 'Old entry GPU' }],
+		deal_rules: ['Demand RTX 4050+ at this budget'],
+		evidence: [{ title: 'Mock market scan', url: 'https://example.com/market', quote_or_fact: 'RTX 4050 available from 13-15 juta', relevance: 'Price bracket' }],
+		confidence: 'MEDIUM',
+		next_action: 'Send listing links for final judgment'
+	};
+
+	const MOCK_PHASE1_COMPARISON: Phase1Json = {
+		mode: 'COMPARISON',
+		query: 'Lenovo LOQ vs Acer Nitro V',
+		winner: 'Lenovo LOQ RTX 4050',
+		loser: 'Acer Nitro V RTX 4050',
+		verdict: 'CLOSE_CALL',
+		reason: 'LOQ wins on cooling and build. Nitro V only if meaningfully cheaper.',
+		compared: [
+			{ name: 'Lenovo LOQ RTX 4050', price_idr: 14500000, strengths: ['Better chassis'], flaws: ['Pricier'], verdict: 'APPROVED' },
+			{ name: 'Acer Nitro V RTX 4050', price_idr: 13800000, strengths: ['Cheaper'], flaws: ['Thermal concerns'], verdict: 'CAUTION' }
+		],
+		evidence: [{ title: 'Mock comparison', url: 'https://example.com/vs', quote_or_fact: 'LOQ thermals measured better', relevance: 'Thermal test' }],
+		confidence: 'MEDIUM'
+	};
+
+	const getPhase1JsonForIntent = (intent: Intent): Phase1Json => {
+		switch (intent) {
+			case 'recommendation': return MOCK_PHASE1_RECOMMENDATION;
+			case 'comparison': return MOCK_PHASE1_COMPARISON;
+			default: return MOCK_PHASE1_VERDICT;
+		}
+	};
+
 	const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 	const detectIntent = (query: string): Intent => {
@@ -428,8 +512,9 @@
 				content = 'Verdict is CAUTION. Here is why.';
 			}
 
+			const phase1Json = getPhase1JsonForIntent(intent);
 			messages = messages.map((m) =>
-				m.id === `${runId}-assistant` ? { ...m, status: 'done', content, result } : m
+				m.id === `${runId}-assistant` ? { ...m, status: 'done', content, result, phase1Json } : m
 			);
 		} catch {
 			messages = messages.map((m) =>
@@ -445,7 +530,12 @@
 	}
 
 	const handleSubmit = () => {
-		if (draftInput.trim() && mode !== 'running') runMockScan(draftInput.trim());
+		if (!draftInput.trim()) return;
+		if (composerMode === 'doubt') {
+			sendDoubtQuestion(draftInput.trim());
+		} else {
+			if (mode !== 'running') runMockScan(draftInput.trim());
+		}
 	};
 
 	const handleKeydown = (event: KeyboardEvent) => {
@@ -459,6 +549,76 @@
 		selectedMode = card.intent;
 		draftInput = card.sample;
 		textareaEl?.focus();
+	};
+
+	// ── Phase 2 doubt mode functions ──
+	const enterDoubtMode = () => {
+		if (!activePhase1Json) return;
+		composerMode = 'doubt';
+		draftInput = '';
+		requestAnimationFrame(() => textareaEl?.focus());
+	};
+
+	const exitDoubtMode = () => {
+		composerMode = 'scan';
+		draftInput = '';
+		doubtMessages = [];
+		doubtLoading = false;
+		doubtError = '';
+		showRescanCta = false;
+	};
+
+	const sendDoubtQuestion = async (question: string) => {
+		if (!question.trim() || doubtLoading || doubtMaxed || !activePhase1Json) return;
+
+		const q = question.trim();
+		draftInput = '';
+		doubtError = '';
+
+		doubtMessages = [...doubtMessages, { role: 'user', content: q }];
+		doubtLoading = true;
+		scrollToBottom();
+
+		try {
+			const historyForApi = doubtMessages
+				.slice(0, -1)
+				.map((m) => ({ role: m.role, content: m.content }));
+
+			const res = await fetch('/api/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					originalInput: activeOriginalInput,
+					phase1Result: activePhase1Json,
+					messages: historyForApi,
+					question: q
+				})
+			});
+
+			if (!res.ok) {
+				const errBody = await res.json().catch(() => ({ error: 'unknown' }));
+				throw new Error(errBody.error || `HTTP ${res.status}`);
+			}
+
+			const data = await res.json();
+			if (!data.ok) throw new Error(data.error || 'chat_failed');
+
+			doubtMessages = [...doubtMessages, { role: 'assistant', content: data.reply }];
+
+			if (data.needsNewScan) {
+				showRescanCta = true;
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : 'Something went wrong';
+			doubtError = `BLEP choked: ${msg}. Try again.`;
+		} finally {
+			doubtLoading = false;
+			scrollToBottom();
+		}
+	};
+
+	const handleDoubtChip = (chip: string) => {
+		sendDoubtQuestion(chip);
 	};
 
 	const expandSidebar = () => {
@@ -478,6 +638,12 @@
 		activeHistoryId = null;
 		elapsedSeconds = 0;
 		stopElapsedTimer();
+		// Reset doubt state
+		composerMode = 'scan';
+		doubtMessages = [];
+		doubtLoading = false;
+		doubtError = '';
+		showRescanCta = false;
 	};
 
 	const handleNewScanClick = () => {
@@ -492,6 +658,12 @@
 		activeHistoryId = entry.id;
 		draftInput = entry.query;
 		mode = 'done';
+		// Reset doubt on history load
+		composerMode = 'scan';
+		doubtMessages = [];
+		doubtLoading = false;
+		doubtError = '';
+		showRescanCta = false;
 
 		if (entry.verdict === 'RECOMMENDATION') {
 			selectedMode = 'recommendation';
@@ -503,7 +675,8 @@
 					status: 'done',
 					content: 'Target RTX 4050-class. Avoid RTX 2050 above 10-11 juta.',
 					timestamp: Date.now(),
-					result: MOCK_RECOMMENDATION
+					result: MOCK_RECOMMENDATION,
+					phase1Json: MOCK_PHASE1_RECOMMENDATION
 				}
 			];
 			toolSteps = TOOL_STEPS_BY_INTENT.recommendation.map((step, i) => ({
@@ -546,7 +719,8 @@
 							? 'Verdict is APPROVED. Here is why.'
 							: 'Verdict is WASTE. Here is why.',
 					timestamp: Date.now(),
-					result: res
+					result: res,
+					phase1Json: MOCK_PHASE1_VERDICT
 				}
 			];
 			toolSteps = TOOL_STEPS_BY_INTENT.verdict.map((step, i) => ({
@@ -558,11 +732,29 @@
 		scrollToBottom();
 	};
 
-	const canSubmit = $derived(draftInput.trim().length > 0 && mode !== 'running');
+	// ── Phase 2 derived state ──
+	const doubtTurnCount = $derived(doubtMessages.filter((m) => m.role === 'user').length);
+	const doubtMaxed = $derived(doubtTurnCount >= MAX_DOUBT_TURNS);
+	const activePhase1Json = $derived.by(() => {
+		const last = messages.findLast((m) => m.role === 'blep' && m.phase1Json);
+		return last?.phase1Json ?? null;
+	});
+	const activeOriginalInput = $derived(
+		messages.find((m) => m.role === 'user')?.content ?? ''
+	);
+
+	const canSubmit = $derived(
+		draftInput.trim().length > 0 &&
+			(composerMode === 'doubt' ? !doubtLoading && !doubtMaxed : mode !== 'running')
+	);
 	const collapsed = $derived(!sidebarExpanded || isMobileRail);
 	const sidebarWidth = $derived(collapsed ? '68px' : '292px');
 	const activityWidth = $derived(activityOpen ? '320px' : '0px');
-	const composerPlaceholder = $derived(modeByIntent(selectedMode).placeholder);
+	const composerPlaceholder = $derived(
+		composerMode === 'doubt'
+			? 'Ask why, challenge seller claim, or paste changed price/spec'
+			: modeByIntent(selectedMode).placeholder
+	);
 
 	onMount(() => {
 		document.documentElement.classList.add('app-lock');
@@ -581,10 +773,22 @@
 			now = new Date();
 		}, 60000);
 
+		// Keyboard shortcut: press 'x' to enter doubt mode (not while typing)
+		const handleGlobalKeydown = (e: KeyboardEvent) => {
+			const tag = (e.target as HTMLElement)?.tagName;
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+			if (e.key === 'x' && mode === 'done' && activePhase1Json && composerMode === 'scan') {
+				e.preventDefault();
+				enterDoubtMode();
+			}
+		};
+		window.addEventListener('keydown', handleGlobalKeydown);
+
 		return () => {
 			document.documentElement.classList.remove('app-lock');
 			document.body.classList.remove('app-lock');
 			mediaQuery.removeEventListener('change', syncMobileRail);
+			window.removeEventListener('keydown', handleGlobalKeydown);
 			clearInterval(interval);
 			stopElapsedTimer();
 		};
@@ -653,6 +857,33 @@
 
 {#snippet Composer()}
 	<div class="composer-wrap">
+		{#if composerMode === 'doubt'}
+			<div class="doubt-mode-pill">
+				<div class="doubt-pill-left">
+					<span class="doubt-pill-icon" aria-hidden="true">✕</span>
+					<span class="doubt-pill-text {fontMono}">Doubting current verdict · Chat only · No Brain Juice</span>
+				</div>
+				<button type="button" class="doubt-pill-exit btnGhost" onclick={exitDoubtMode}>
+					Back to new scan
+				</button>
+			</div>
+
+			{#if doubtMessages.length === 0 && !doubtMaxed}
+				<div class="doubt-chips-row">
+					{#each DOUBT_CHIPS as chip (chip)}
+						<button
+							type="button"
+							class="doubt-chip {fontBody}"
+							onclick={() => handleDoubtChip(chip)}
+							disabled={doubtLoading}
+						>
+							{chip}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		{/if}
+
 		<div class="composer-box">
 			<label for="blep-input" class="sr-only">Your hardware question</label>
 			<textarea
@@ -660,24 +891,31 @@
 				bind:this={textareaEl}
 				bind:value={draftInput}
 				onkeydown={handleKeydown}
-				disabled={mode === 'running'}
+				disabled={mode === 'running' || doubtLoading || (composerMode === 'doubt' && doubtMaxed)}
 				placeholder={composerPlaceholder}
 				class="composer-textarea {fontBody}"
 				style="min-height: 80px; padding: 12px;"
 			></textarea>
 			<div class="composer-actions-row">
+				{#if composerMode === 'doubt' && doubtTurnCount > 0}
+					<span class="doubt-turn-badge {fontMono}">{doubtTurnCount}/{MAX_DOUBT_TURNS} doubts</span>
+				{/if}
 				<button
 					class="btnPrimary composer-primary"
 					onclick={handleSubmit}
 					disabled={!canSubmit}
 					type="button"
 				>
-					{mode === 'running' ? 'Asking...' : 'Ask BLEP'}
+					{#if composerMode === 'doubt'}
+						{doubtLoading ? 'Asking...' : 'Ask BLEP'}
+					{:else}
+						{mode === 'running' ? 'Asking...' : 'Ask BLEP'}
+					{/if}
 				</button>
 			</div>
 		</div>
 
-		{#if messages.length === 0}
+		{#if composerMode === 'scan' && messages.length === 0}
 			<div class="composer-chips-under">
 				<div class="mode-chips" aria-label="Scan mode">
 					{#each promptCards as card (card.intent)}
@@ -915,6 +1153,24 @@
 													</div>
 												{/if}
 											</div>
+
+											{#if blepMsg.phase1Json && blepMsg.result}
+												<FollowUpChat
+													{doubtMessages}
+													isLoading={doubtLoading}
+													errorMsg={doubtError}
+													{showRescanCta}
+													turnCount={doubtTurnCount}
+													maxTurns={MAX_DOUBT_TURNS}
+													isDoubtActive={composerMode === 'doubt'}
+													onDoubtClick={enterDoubtMode}
+													onRescan={() => {
+														exitDoubtMode();
+														const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
+														if (lastUserMsg) runMockScan(lastUserMsg.content);
+													}}
+												/>
+											{/if}
 										{/if}
 									{/if}
 								</div>
@@ -1696,6 +1952,94 @@
 		text-align: center;
 		font-size: 0.76rem;
 		font-weight: 600;
+	}
+
+	/* ── Doubt Mode Composer ── */
+	.doubt-mode-pill {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		flex-wrap: wrap;
+		padding: 10px 14px;
+		margin-bottom: 8px;
+		border: 1.5px solid var(--color-ink);
+		background: var(--color-paper-dark);
+	}
+
+	.doubt-pill-left {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.doubt-pill-icon {
+		font-size: 0.8rem;
+		opacity: 0.6;
+		flex-shrink: 0;
+	}
+
+	.doubt-pill-text {
+		color: rgba(17, 17, 17, 0.6);
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.doubt-pill-exit {
+		flex-shrink: 0;
+		font-size: 0.75rem;
+		min-height: 32px;
+		padding: 0 10px;
+		text-decoration: underline;
+		text-underline-offset: 3px;
+	}
+
+	.doubt-chips-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 8px;
+	}
+
+	.doubt-chip {
+		border: 1px solid rgba(17, 17, 17, 0.18);
+		background: transparent;
+		color: rgba(17, 17, 17, 0.7);
+		padding: 5px 12px;
+		font-size: 0.78rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition:
+			border-color 150ms ease,
+			background 150ms ease,
+			color 150ms ease;
+	}
+
+	.doubt-chip:hover:not(:disabled) {
+		border-color: var(--color-ink);
+		background: var(--color-ink);
+		color: var(--color-paper);
+	}
+
+	.doubt-chip:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.doubt-turn-badge {
+		color: rgba(17, 17, 17, 0.4);
+		font-size: 10px;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		margin-right: auto;
+		align-self: center;
 	}
 
 	.activity-panel {
