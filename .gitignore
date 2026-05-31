@@ -42,6 +42,7 @@ firebase-service-account*.json
 *.pem
 *.key
 *.p12
+env.yaml
 
 # Vite
 vite.config.js.timestamp-*

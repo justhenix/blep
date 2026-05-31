@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { spring } from 'svelte/motion';
-	import { fade } from 'svelte/transition';
+	import { fade, slide } from 'svelte/transition';
 
 	const timelineData = [
 		{
@@ -437,18 +437,13 @@
 									</span>
 								</button>
 							</h3>
-							<div
-								class="faq-content grid transition-[grid-template-rows,opacity] duration-300 ease-out {activeFaq ===
-								i
-									? 'grid-rows-[1fr] opacity-100'
-									: 'grid-rows-[0fr] opacity-0'}"
-							>
-								<div class="overflow-hidden">
+							{#if activeFaq === i}
+								<div class="faq-content overflow-hidden" transition:slide={{ duration: 300 }}>
 									<p class="pb-8 text-base leading-relaxed font-medium text-ink/65">
 										{faq.a}
 									</p>
 								</div>
-							</div>
+							{/if}
 						</article>
 					{/each}
 					<div class="border-t border-ink"></div>

@@ -16,16 +16,12 @@ import {
 	onAuthStateChanged,
 	type User
 } from 'firebase/auth';
-import {
-	PUBLIC_FIREBASE_API_KEY,
-	PUBLIC_FIREBASE_AUTH_DOMAIN,
-	PUBLIC_FIREBASE_PROJECT_ID
-} from '$env/static/public';
+import { env } from '$env/dynamic/public';
 
 const firebaseConfig = {
-	apiKey: PUBLIC_FIREBASE_API_KEY,
-	authDomain: PUBLIC_FIREBASE_AUTH_DOMAIN,
-	projectId: PUBLIC_FIREBASE_PROJECT_ID
+	apiKey: env.PUBLIC_FIREBASE_API_KEY,
+	authDomain: env.PUBLIC_FIREBASE_AUTH_DOMAIN,
+	projectId: env.PUBLIC_FIREBASE_PROJECT_ID
 };
 
 let app: FirebaseApp;
