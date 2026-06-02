@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { blepEnv } from './env';
 
 export type RequestIdentitySource = 'x-forwarded-for' | 'x-real-ip' | 'unknown';
@@ -9,7 +9,7 @@ export type RequestIdentity = {
 	userAgentFamily: string;
 };
 
-const DEV_FALLBACK_SALT = 'change-me-local-dev';
+const DEV_FALLBACK_SALT = randomBytes(32).toString('hex');
 
 let warnedAboutMissingSalt = false;
 

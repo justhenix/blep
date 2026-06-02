@@ -199,9 +199,7 @@
 					Sellers overhype basic toasters. Paste a listing or ask what to buy. BLEP tells you if
 					it&apos;s a steal, sketchy, or wallet poison.
 				</p>
-				<p class="mt-5 font-mono text-sm font-bold text-ink uppercase">
-					Approved / Caution / Waste
-				</p>
+
 
 				<div id="demo" class="mt-8 flex scroll-mt-24 flex-wrap items-center gap-3">
 					<a

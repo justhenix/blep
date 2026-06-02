@@ -2,7 +2,6 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import FollowUpChat from '$lib/components/FollowUpChat.svelte';
-	// TODO PROD: import AuthGuard from '$lib/components/AuthGuard.svelte';
 
 	type Mode = 'idle' | 'running' | 'done';
 	type Intent = 'verdict' | 'recommendation' | 'comparison';
@@ -114,6 +113,8 @@
 			// Quota sync failed silently — UI keeps default
 		}
 	};
+
+
 
 	// ── Phase 2 doubt state ──
 	type ComposerMode = 'scan' | 'doubt';
@@ -806,10 +807,9 @@
 
 		const runFetch = async () => {
 			try {
-				const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 				const res = await fetch('/api/scan', {
 					method: 'POST',
-					headers,
+					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ query })
 				});
 				const data = await res.json();
@@ -1101,10 +1101,9 @@
 				.slice(0, -1)
 				.map((m) => ({ role: m.role, content: m.content }));
 
-			const chatHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
 			const res = await fetch('/api/chat', {
 				method: 'POST',
-				headers: chatHeaders,
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					originalInput: activeOriginalInput,
 					phase1Result: activePhase1Json,
@@ -1484,12 +1483,12 @@
 	</div>
 {/snippet}
 
-<!-- TODO PROD: wrap with <AuthGuard> for Google OAuth -->
-<div
-	class="app-shell {fontBody}"
-	style:--sidebar-width={sidebarWidth}
-	style:--activity-width={activityWidth}
->
+<!-- No auth required — IP-based quota -->
+		<div
+			class="app-shell {fontBody}"
+			style:--sidebar-width={sidebarWidth}
+			style:--activity-width={activityWidth}
+		>
 	<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
 		<div class="sidebar-brand">
 			<button
@@ -1519,7 +1518,7 @@
 			</div>
 		</div>
 
-		<!-- TODO PROD: add user avatar + sign out here when OAuth is enabled -->
+
 
 		<button
 			class="sidebar-new"
@@ -1967,7 +1966,8 @@
 			{@render ActivityLog()}
 		</aside>
 	{/if}
-</div>
+		</div>
+<!-- /no-auth -->
 
 <style>
 	:global(html.app-lock),

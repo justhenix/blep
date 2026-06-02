@@ -1,6 +1,10 @@
 import { env } from '$env/dynamic/private';
 import type { Handle } from '@sveltejs/kit';
 import { dev } from '$app/environment';
+import { initDb } from '$lib/server/db';
+
+// Cold-start DB schema init (idempotent, non-blocking for requests)
+initDb().catch((e) => console.error('[blep hooks] DB init failed:', e));
 
 const cspDirectives = [
 	"default-src 'self'",

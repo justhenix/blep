@@ -10,7 +10,7 @@
 	const footerPrimaryLinks: FooterLink[] = [
 		{ label: 'Flow', href: '#flow' },
 		{ label: 'FAQ', href: '#faq' },
-		{ label: 'Contact', href: 'https://www.linkedin.com/in/gammarasyad/' },
+		{ label: 'Contact', href: 'https://x.com/heni0x' },
 		{ label: 'Github', href: 'https://github.com/justhenix/blep' }
 	];
 

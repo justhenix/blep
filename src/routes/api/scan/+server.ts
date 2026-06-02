@@ -25,8 +25,8 @@ import {
 	type BlepErrorCode
 } from '$lib/server/errors';
 import { collectSources } from '$lib/server/firecrawl';
-import { verifyBearerToken } from '$lib/server/firebase-admin';
-import { generatePhase1, getGeminiErrorCode } from '$lib/server/gemini';
+
+import { generatePhase1, getAiErrorCode } from '$lib/server/ai';
 import { checkDailyQuota, consumeDailyQuota } from '$lib/server/quota';
 import { getRequestIdentity, type RequestIdentity } from '$lib/server/request-identity';
 import { createTrace, type ScanTrace } from '$lib/server/trace';
@@ -195,7 +195,7 @@ const safeLogValue = (value: unknown) =>
 
 const logEnvStatus = () => {
 	console.info(
-		`[blep env] gemini=${Boolean(blepEnv.geminiApiKey)} firecrawl=${Boolean(blepEnv.firecrawlApiKey)} firebase=${Boolean(blepEnv.firebaseProjectId || blepEnv.googleApplicationCredentials)} mock=${blepEnv.useMock}`
+		`[blep env] ai=${Boolean(blepEnv.geminiApiKey || blepEnv.openaiApiKey || blepEnv.deepseekApiKey)} firecrawl=${Boolean(blepEnv.firecrawlApiKey)} db=${Boolean(blepEnv.tursoUrl)} mock=${blepEnv.useMock}`
 	);
 };
 
@@ -318,18 +318,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	const identity = getRequestIdentity(request);
 	logIdentity(identity);
 
-	let decodedToken: Awaited<ReturnType<typeof verifyBearerToken>>;
 	try {
-		decodedToken = await verifyBearerToken(request.headers.get('authorization'));
-	} catch (error) {
-		logSafeError('auth_error', error);
-		const authError = blepError('bad_auth', 401);
-
-		return respond(buildApiErrorResponse(authError.code), { status: authError.status });
-	}
-
-	try {
-		const quotaSubject = decodedToken?.uid ?? identity.identityHash;
+		const quotaSubject = identity.identityHash;
 
 		quota = await checkDailyQuota(quotaSubject);
 		trace.log('quota_checked', 'done', `remaining=${quota.remaining}/${quota.limit}`);
@@ -400,7 +390,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			trace.log('gemini_done', 'done', `mode=${result.mode}`);
 			trace.log('zod_validated', 'done');
 		} catch (error) {
-			const geminiCode = getGeminiErrorCode(error);
+			const geminiCode = getAiErrorCode(error);
 			trace.log('gemini_done', 'fail', `code=${geminiCode}`);
 			return respond(buildFallbackResponse(geminiCode, trace, quota, query, sources), {
 				status: 200

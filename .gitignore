@@ -48,7 +48,7 @@ env.yaml
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Agents
+# Personal Agents
 .antigravitycli
 .playwright-cli
 AGENTS.md

@@ -3,7 +3,9 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { blepPhase1OutputSchema } from '$lib/blep/schema';
 import { PHASE2_SYSTEM_PROMPT, buildPhase2Content } from '$lib/blep/prompt.phase2';
-import { generatePhase2Chat } from '$lib/server/gemini';
+import { generatePhase2Chat } from '$lib/server/ai';
+import { blepEnv } from '$lib/server/env';
+
 
 // ── Request schema ──────────────────────────────────
 const chatMessageSchema = z.object({
@@ -110,6 +112,18 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Build prompt content
 	const userContent = buildPhase2Content(originalInput, phase1Result, recentMessages, question);
+
+	// Mock bypass
+	if (blepEnv.useMock) {
+		console.info('[blep mock] returning mock chat response');
+		// Artificial delay to make it feel real
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		return json({
+			ok: true,
+			reply: "This is a mocked response from BLEP. The real API is turned off locally to save credits. But basically: the seller is lying, the specs are bad, and you shouldn't buy it.",
+			needsNewScan: false
+		} satisfies Phase2Response);
+	}
 
 	try {
 		const rawText = await generatePhase2Chat(PHASE2_SYSTEM_PROMPT, userContent);

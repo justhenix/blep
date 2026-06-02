@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { BlepVerdict } from '$lib/blep/types';
 import { blepVerdictSchema } from '$lib/blep/schema';
 import { blepEnv } from './env';
-import { getFirebaseDb } from './firebase-admin';
+import { getDb } from './db';
 
 export type CacheKeyInput = {
 	query: string;
@@ -24,11 +23,6 @@ export type CacheLookupResult =
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
-const safeErrorCode = (error: unknown) =>
-	error && typeof error === 'object' && 'code' in error
-		? String((error as { code: unknown }).code)
-		: 'unknown';
-
 const normalizeCacheInput = ({ query, urls }: CacheKeyInput) => ({
 	query: query.trim().toLowerCase().replace(/\s+/g, ' '),
 	urls: [...urls]
@@ -47,14 +41,7 @@ export const buildCacheKey = ({ query, urls }: CacheKeyInput) => {
 	return { cacheKey, queryHash, urlsHash };
 };
 
-const cacheTtlMs = () => blepEnv.cacheTtlHours * 60 * 60 * 1000;
-
-const isExpired = (expiresAt: unknown) => {
-	if (expiresAt instanceof Timestamp) return expiresAt.toMillis() < Date.now();
-	if (typeof expiresAt === 'number') return expiresAt < Date.now();
-
-	return true;
-};
+const cacheTtlSeconds = () => blepEnv.cacheTtlHours * 60 * 60;
 
 const safeSourceList = (raw: unknown): { title: string; url: string }[] => {
 	if (!Array.isArray(raw)) return [];
@@ -72,34 +59,49 @@ const safeSourceList = (raw: unknown): { title: string; url: string }[] => {
 		.filter((entry): entry is { title: string; url: string } => Boolean(entry));
 };
 
+const safeJsonParse = (raw: unknown): unknown => {
+	if (typeof raw !== 'string') return undefined;
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return undefined;
+	}
+};
+
 export const lookupCache = async ({ query, urls }: CacheKeyInput): Promise<CacheLookupResult> => {
 	const { cacheKey } = buildCacheKey({ query, urls });
-	const db = getFirebaseDb();
+	const db = getDb();
 
 	if (!db) {
-		console.warn('[blep cache] Firebase unavailable — cache bypassed');
+		console.warn('[blep cache] DB unavailable — cache bypassed');
 		return { hit: false, cacheKey };
 	}
 
 	try {
-		const doc = db.collection('scan_cache').doc(cacheKey);
-		const snap = await doc.get();
+		const row = await db.execute({
+			sql: `SELECT verdict, sources, expires_at FROM scan_cache WHERE key = ?`,
+			args: [cacheKey]
+		});
 
-		if (!snap.exists) return { hit: false, cacheKey };
+		if (!row.rows.length) return { hit: false, cacheKey };
 
-		const data = snap.data() ?? {};
+		const data = row.rows[0];
+		const nowUnix = Math.floor(Date.now() / 1000);
 
-		if (isExpired(data.expiresAt)) return { hit: false, cacheKey };
+		if (typeof data.expires_at === 'number' && data.expires_at < nowUnix) {
+			return { hit: false, cacheKey };
+		}
 
-		const verdictResult = blepVerdictSchema.safeParse(data.verdict);
+		const verdictResult = blepVerdictSchema.safeParse(safeJsonParse(data.verdict));
 		if (!verdictResult.success) return { hit: false, cacheKey };
 
-		const sources = safeSourceList(data.sources);
+		const sources = safeSourceList(safeJsonParse(data.sources));
 
-		void doc
-			.update({
-				hitCount: FieldValue.increment(1),
-				lastHitAt: FieldValue.serverTimestamp()
+		// Fire-and-forget hit counter bump
+		void db
+			.execute({
+				sql: `UPDATE scan_cache SET hit_count = hit_count + 1, last_hit_at = unixepoch() WHERE key = ?`,
+				args: [cacheKey]
 			})
 			.catch(() => undefined);
 
@@ -110,7 +112,7 @@ export const lookupCache = async ({ query, urls }: CacheKeyInput): Promise<Cache
 			sources
 		};
 	} catch (error) {
-		console.warn(`[blep cache] lookup failed code=${safeErrorCode(error)}`);
+		console.warn(`[blep cache] lookup failed:`, error);
 		return { hit: false, cacheKey };
 	}
 };
@@ -121,36 +123,42 @@ export const storeCache = async (
 	sources: { title: string; url: string }[]
 ) => {
 	const { cacheKey, queryHash, urlsHash } = buildCacheKey(input);
-	const db = getFirebaseDb();
+	const db = getDb();
 
 	if (!db) {
-		console.warn('[blep cache] Firebase unavailable — cache store skipped');
+		console.warn('[blep cache] DB unavailable — cache store skipped');
 		return cacheKey;
 	}
 
 	try {
-		const doc = db.collection('scan_cache').doc(cacheKey);
-		const expiresAt = Timestamp.fromMillis(Date.now() + cacheTtlMs());
+		const nowUnix = Math.floor(Date.now() / 1000);
+		const expiresAt = nowUnix + cacheTtlSeconds();
 
-		await doc.set(
-			{
+		await db.execute({
+			sql: `INSERT INTO scan_cache (key, query_hash, urls_hash, verdict, sources, created_at, expires_at, hit_count, last_hit_at, prompt_version)
+			      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+			      ON CONFLICT(key) DO UPDATE SET
+			        verdict = excluded.verdict,
+			        sources = excluded.sources,
+			        expires_at = excluded.expires_at,
+			        last_hit_at = excluded.last_hit_at,
+			        prompt_version = excluded.prompt_version`,
+			args: [
 				cacheKey,
 				queryHash,
 				urlsHash,
-				verdict,
-				sources,
-				createdAt: FieldValue.serverTimestamp(),
+				JSON.stringify(verdict),
+				JSON.stringify(sources),
+				nowUnix,
 				expiresAt,
-				hitCount: 0,
-				lastHitAt: FieldValue.serverTimestamp(),
-				promptVersion: blepEnv.promptVersion
-			},
-			{ merge: true }
-		);
+				nowUnix,
+				blepEnv.promptVersion
+			]
+		});
 
 		return cacheKey;
 	} catch (error) {
-		console.warn(`[blep cache] store failed code=${safeErrorCode(error)}`);
+		console.warn(`[blep cache] store failed:`, error);
 
 		return cacheKey;
 	}
