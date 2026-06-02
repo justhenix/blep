@@ -150,7 +150,7 @@
 	}
 
 	.doubt-hint {
-		color: rgba(17, 17, 17, 0.42);
+		color: color-mix(in oklab, var(--color-ink) 42%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -165,7 +165,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		border-top: 1px solid rgba(17, 17, 17, 0.08);
+		border-top: 1px solid color-mix(in oklab, var(--color-ink) 8%, transparent);
 		margin-top: 14px;
 	}
 
@@ -190,7 +190,7 @@
 	}
 
 	.doubt-msg-label {
-		color: rgba(17, 17, 17, 0.42);
+		color: color-mix(in oklab, var(--color-ink) 42%, transparent);
 		font-size: 9px;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -212,7 +212,7 @@
 	}
 
 	.doubt-thinking {
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-style: italic;
 	}
 
@@ -256,7 +256,7 @@
 	}
 
 	.doubt-rescan-note {
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -266,7 +266,7 @@
 	/* ── Closed / Turns ── */
 	.doubt-closed {
 		padding: 10px 0;
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
@@ -276,7 +276,7 @@
 	.doubt-turns {
 		margin: 0;
 		padding: 6px 0 0;
-		color: rgba(17, 17, 17, 0.35);
+		color: color-mix(in oklab, var(--color-ink) 35%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;

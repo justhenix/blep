@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { spring } from 'svelte/motion';
+	import { theme } from '$lib/theme.svelte';
 
 	type FooterLink = {
 		label: string;
@@ -127,13 +128,23 @@
 	</nav>
 
 	<button class="blep-footer__logo-wrap" type="button" aria-label="BLEP mascot">
-		<img
-			class="blep-footer__logo"
-			src="/logo-full-main.svg"
-			alt=""
-			loading="lazy"
-			decoding="async"
-		/>
+		{#if theme.resolved === 'light'}
+			<img
+				class="blep-footer__logo"
+				src="/logo-full-main.svg"
+				alt=""
+				loading="lazy"
+				decoding="async"
+			/>
+		{:else}
+			<img
+				class="blep-footer__logo"
+				src="/logo-full-white.svg"
+				alt=""
+				loading="lazy"
+				decoding="async"
+			/>
+		{/if}
 		<svg
 			class="blep-footer__logo-eyes"
 			viewBox="0 0 1440 442.5"
@@ -248,7 +259,6 @@
 	}
 
 	.blep-footer__logo {
-		display: block;
 		width: 100%;
 		height: auto;
 		margin: 0;
@@ -281,8 +291,8 @@
 	}
 
 	.blep-footer-eye {
-		fill: #000000;
-		stroke: #000000;
+		fill: var(--color-ink);
+		stroke: var(--color-ink);
 		stroke-width: 7;
 		stroke-linejoin: miter;
 	}

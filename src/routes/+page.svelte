@@ -203,13 +203,13 @@
 
 				<div id="demo" class="mt-8 flex scroll-mt-24 flex-wrap items-center gap-3">
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-paper hover:text-ink"
 						href="/app"
 					>
 						Ask BLEP
 					</a>
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-white px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-paper px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
 						href="/app?q=Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050, which one?"
 					>
 						Compare laptops
@@ -223,14 +223,14 @@
 				aria-label="BLEP cube mascot inside constructivist hardware verdict poster"
 			>
 				<div
-					class="absolute top-[19%] left-[24%] h-52 w-52 rounded-full border border-ink/25 bg-paper"
+					class="absolute top-[19%] left-[24%] h-52 w-52 rounded-full border border-ink/25 dark:border-ink/45 bg-paper"
 				></div>
 				<div
-					class="absolute top-[18%] right-[10%] h-12 w-56 rotate-[-36deg] bg-paper-dark/80"
+					class="absolute top-[18%] right-[10%] h-12 w-56 rotate-[-36deg] bg-paper-dark/80 dark:bg-ink/10"
 				></div>
-				<div class="absolute top-[18%] left-[12%] h-28 w-48 border border-ink/20"></div>
-				<div class="absolute top-[51%] left-[25%] h-px w-[65%] rotate-[-18deg] bg-ink/30"></div>
-				<div class="absolute top-[28%] right-[12%] h-px w-[42%] rotate-[-36deg] bg-ink/35"></div>
+				<div class="absolute top-[18%] left-[12%] h-28 w-48 border border-ink/20 dark:border-ink/40"></div>
+				<div class="absolute top-[51%] left-[25%] h-px w-[65%] rotate-[-18deg] bg-ink/30 dark:bg-ink/50"></div>
+				<div class="absolute top-[28%] right-[12%] h-px w-[42%] rotate-[-36deg] bg-ink/35 dark:bg-ink/55"></div>
 				<div class="plus-mark top-[31%] left-[12%]"></div>
 				<div class="plus-mark right-[10%] bottom-[15%]"></div>
 				<span
@@ -279,7 +279,7 @@
 									<polyline
 										points="716.42,445.28 656.5,496 719.45,519.14"
 										fill="none"
-										stroke="#111111"
+										stroke="var(--color-ink)"
 										stroke-width="22"
 										stroke-linecap="butt"
 										stroke-linejoin="miter"
@@ -288,7 +288,7 @@
 									<polyline
 										points="528.12,487.6 591,510.55 531.14,561.46"
 										fill="none"
-										stroke="#111111"
+										stroke="var(--color-ink)"
 										stroke-width="22"
 										stroke-linecap="butt"
 										stroke-linejoin="miter"
@@ -376,7 +376,7 @@
 							style="grid-column:2; grid-row:1; justify-self:center; align-self:start; margin-top:2.25rem; z-index:1;"
 						></div>
 						<div
-							class="bg-white p-8 transition-all duration-300 md:p-12
+							class="bg-paper p-8 transition-all duration-300 md:p-12
 								{activeStep === i ? 'border border-ink opacity-100' : 'border border-ink/10 opacity-40'}"
 							style={i % 2 === 0
 								? 'grid-column:1; grid-row:1; text-align:right;'
@@ -486,7 +486,7 @@
 	.plus-mark::after {
 		content: '';
 		position: absolute;
-		background: #111111;
+		background: var(--color-ink);
 	}
 
 	.plus-mark::before {
@@ -505,13 +505,13 @@
 
 	/* ── Mascot ── */
 	.mascot-cube {
-		filter: drop-shadow(8px 10px 0 rgba(17, 17, 17, 0.055));
+		filter: drop-shadow(8px 10px 0 color-mix(in oklab, var(--color-ink) 5.5%, transparent));
 		animation: mascot-float 5.5s ease-in-out infinite;
 	}
 
 	.cube-line {
-		fill: #fbfaf8;
-		stroke: #111111;
+		fill: var(--color-paper);
+		stroke: var(--color-ink);
 		stroke-linecap: butt;
 		stroke-linejoin: miter;
 		stroke-miterlimit: 10;
@@ -540,8 +540,8 @@
 	}
 
 	.mascot-eye {
-		fill: #111111;
-		stroke: #111111;
+		fill: var(--color-ink);
+		stroke: var(--color-ink);
 		stroke-linejoin: miter;
 		stroke-miterlimit: 10;
 		stroke-width: 8;
@@ -555,7 +555,7 @@
 
 	.blep-eye--lid {
 		fill: none;
-		stroke: #111111;
+		stroke: var(--color-ink);
 		stroke-width: 18;
 		stroke-linecap: butt;
 		stroke-linejoin: miter;
@@ -583,7 +583,7 @@
 		left: 50%;
 		top: 0;
 		bottom: 0;
-		border-left: 2px dotted rgba(17, 17, 17, 0.25);
+		border-left: 2px dotted color-mix(in oklab, var(--color-ink) 25%, transparent);
 		transform: translateX(-50%);
 	}
 

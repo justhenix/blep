@@ -2,6 +2,8 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import FollowUpChat from '$lib/components/FollowUpChat.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import { theme } from '$lib/theme.svelte';
 
 	type Mode = 'idle' | 'running' | 'done';
 	type Intent = 'verdict' | 'recommendation' | 'comparison';
@@ -1499,11 +1501,19 @@
 				aria-expanded={!collapsed}
 				aria-controls="sidebar"
 			>
-				<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
+				{#if theme.resolved === 'light'}
+					<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="sidebar-logo-icon" />
+				{:else}
+					<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="sidebar-logo-icon" />
+				{/if}
 			</button>
 			<div class="sidebar-brand-expanded">
 				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
-					<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
+					{#if theme.resolved === 'light'}
+						<img src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'} alt="BLEP" class="sidebar-logo-full" />
+					{:else}
+						<img src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'} alt="BLEP" class="sidebar-logo-full" />
+					{/if}
 				</a>
 				<button
 					type="button"
@@ -1724,6 +1734,9 @@
 				<span class="brain-dot" class:active={brainJuice > 0}></span>
 				BRAIN JUICE {brainJuice}/{brainJuiceMax}
 			</div>
+			<div class="theme-toggle-wrap" style="margin-left: auto;">
+				<ThemeToggle />
+			</div>
 			<button
 				type="button"
 				class="log-toggle {fontDisplay}"
@@ -1741,7 +1754,11 @@
 					<div class="idle-stack" in:fade={{ duration: 150 }}>
 						<div class="idle-copy">
 							<div class="idle-heading-row">
-								<img src="/logo-main.svg" alt="" class="idle-mark" />
+								{#if theme.resolved === 'light'}
+									<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="idle-mark" />
+								{:else}
+									<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="idle-mark" />
+								{/if}
 								<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
 							</div>
 							<p class="idle-subcopy {fontBody}">
@@ -1988,8 +2005,8 @@
 
 	.sidebar {
 		min-width: 0;
-		border-right: 1px solid rgba(17, 17, 17, 0.12);
-		background: #f7f5ef;
+		border-right: 1px solid color-mix(in oklab, var(--color-ink) 12%, transparent);
+		background: var(--color-paper-dark);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
@@ -2068,20 +2085,20 @@
 	.sidebar-toggle:focus-visible,
 	.log-toggle:hover,
 	.log-toggle:focus-visible {
-		background: rgba(17, 17, 17, 0.06);
+		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
 		outline: none;
 		border: 0;
 		box-shadow: none;
 	}
 
 	.sidebar-logo-full {
-		display: block;
+		/* display: block; */
 		width: auto;
 		height: 32px;
 	}
 
 	.sidebar-logo-icon {
-		display: block;
+		/* display: block; */
 		width: 34px;
 		height: 34px;
 		object-fit: contain;
@@ -2102,7 +2119,7 @@
 		align-items: center;
 		gap: 10px;
 		padding: 8px 14px 12px;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+		border-bottom: 1px solid color-mix(in oklab, var(--color-ink) 8%, transparent);
 		margin-bottom: 4px;
 	}
 
@@ -2146,7 +2163,7 @@
 	.sidebar-logout {
 		border: 0;
 		background: transparent;
-		color: rgba(17, 17, 17, 0.4);
+		color: color-mix(in oklab, var(--color-ink) 40%, transparent);
 		font-size: 9px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -2209,8 +2226,8 @@
 	.sidebar-new:hover,
 	.sidebar-new:focus-visible,
 	.sidebar-new.active {
-		border-color: rgba(17, 17, 17, 0.16);
-		background: rgba(17, 17, 17, 0.05);
+		border-color: color-mix(in oklab, var(--color-ink) 16%, transparent);
+		background: color-mix(in oklab, var(--color-ink) 5%, transparent);
 		outline: 2px solid transparent;
 	}
 
@@ -2244,7 +2261,7 @@
 		font-weight: 700;
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
-		color: rgba(17, 17, 17, 0.42);
+		color: color-mix(in oklab, var(--color-ink) 42%, transparent);
 		max-height: 30px;
 		overflow: hidden;
 	}
@@ -2252,7 +2269,7 @@
 	.sidebar-archive-toggle {
 		border: 0;
 		background: transparent;
-		color: rgba(17, 17, 17, 0.42);
+		color: color-mix(in oklab, var(--color-ink) 42%, transparent);
 		font-size: 9px;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -2267,7 +2284,7 @@
 
 	.sidebar-archive-toggle:hover {
 		color: var(--color-ink);
-		background: rgba(17, 17, 17, 0.06);
+		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
 	}
 
 	.sidebar-history {
@@ -2287,7 +2304,7 @@
 
 	.sidebar-empty-hint {
 		padding: 10px 14px;
-		color: rgba(17, 17, 17, 0.35);
+		color: color-mix(in oklab, var(--color-ink) 35%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -2323,7 +2340,7 @@
 	.sidebar-history-item:hover,
 	.sidebar-history-item:focus-visible,
 	.sidebar-history-item.active {
-		background: rgba(17, 17, 17, 0.06);
+		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
 		outline: 2px solid transparent;
 	}
 
@@ -2332,7 +2349,7 @@
 		height: 12px;
 		margin-top: 4px;
 		border: 1.5px solid var(--color-ink);
-		box-shadow: 1.5px 1.5px 0 rgba(17, 17, 17, 0.9);
+		box-shadow: 1.5px 1.5px 0 color-mix(in oklab, var(--color-ink) 90%, transparent);
 		flex: 0 0 auto;
 		transition:
 			width 180ms ease,
@@ -2374,7 +2391,7 @@
 
 	.history-badge {
 		width: fit-content;
-		border: 1px solid rgba(17, 17, 17, 0.18);
+		border: 1px solid color-mix(in oklab, var(--color-ink) 18%, transparent);
 		padding: 1px 6px;
 		font-size: 9px;
 		font-weight: 700;
@@ -2415,7 +2432,7 @@
 	.pin-icon :global(svg) {
 		width: 12px;
 		height: 12px;
-		display: block;
+		/* display: block; */
 		transition:
 			width 180ms ease,
 			height 180ms ease;
@@ -2467,7 +2484,7 @@
 
 	.history-menu-btn:hover {
 		opacity: 1;
-		background: rgba(17, 17, 17, 0.08);
+		background: color-mix(in oklab, var(--color-ink) 8%, transparent);
 	}
 
 	.history-context-menu {
@@ -2478,7 +2495,7 @@
 		min-width: 140px;
 		background: var(--color-paper);
 		border: 1.5px solid var(--color-ink);
-		box-shadow: 3px 3px 0 rgba(17, 17, 17, 0.12);
+		box-shadow: 3px 3px 0 color-mix(in oklab, var(--color-ink) 12%, transparent);
 		display: flex;
 		flex-direction: column;
 		padding: 4px 0;
@@ -2501,7 +2518,7 @@
 	}
 
 	.ctx-item:hover {
-		background: rgba(17, 17, 17, 0.06);
+		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
 	}
 
 	.ctx-item.ctx-delete {
@@ -2525,7 +2542,7 @@
 	.ctx-icon :global(svg) {
 		width: 14px;
 		height: 14px;
-		display: block;
+		/* display: block; */
 	}
 
 	.sidebar.collapsed .history-actions-wrap {
@@ -2550,7 +2567,7 @@
 		align-items: center;
 		justify-content: flex-end;
 		gap: 10px;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+		border-bottom: 1px solid color-mix(in oklab, var(--color-ink) 8%, transparent);
 		background: var(--color-paper);
 	}
 
@@ -2561,14 +2578,14 @@
 		justify-content: center;
 		gap: 8px;
 		padding: 0 8px;
-		color: rgba(17, 17, 17, 0.72);
+		color: color-mix(in oklab, var(--color-ink) 72%, transparent);
 		text-decoration: none;
 	}
 
 	.back-home-logo {
 		height: 26px;
 		width: auto;
-		display: block;
+		/* display: block; */
 	}
 
 	.back-home-text {
@@ -2590,7 +2607,7 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		border: 1.5px solid var(--color-ink);
+		border: 1.5px solid color-mix(in oklab, var(--color-ink) 25%, transparent);
 		background: var(--color-paper);
 		color: var(--color-ink);
 		padding: 0 16px;
@@ -2642,7 +2659,7 @@
 	.brain-dot {
 		width: 7px;
 		height: 7px;
-		background: rgba(17, 17, 17, 0.25);
+		background: color-mix(in oklab, var(--color-ink) 25%, transparent);
 	}
 
 	.brain-dot.active {
@@ -2707,7 +2724,7 @@
 
 	.idle-subcopy {
 		margin: 8px 0 0;
-		color: rgba(17, 17, 17, 0.58);
+		color: color-mix(in oklab, var(--color-ink) 58%, transparent);
 		font-size: 0.98rem;
 		font-weight: 600;
 	}
@@ -2771,9 +2788,9 @@
 
 	.msg-blep-label,
 	.result-label {
-		display: block;
+		/* display: block; */
 		margin-bottom: 4px;
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-size: 10px;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -2788,13 +2805,13 @@
 	}
 
 	.thinking {
-		color: rgba(17, 17, 17, 0.54);
+		color: color-mix(in oklab, var(--color-ink) 54%, transparent);
 	}
 
 	.result-card {
 		width: min(100%, 720px);
 		border: 2px solid var(--color-ink);
-		background: white;
+		background: var(--color-paper);
 		padding: 28px;
 		display: flex;
 		flex-direction: column;
@@ -2806,7 +2823,7 @@
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 12px;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.1);
+		border-bottom: 1px solid color-mix(in oklab, var(--color-ink) 10%, transparent);
 		padding-bottom: 12px;
 	}
 
@@ -2823,7 +2840,7 @@
 		font-weight: 800;
 		letter-spacing: 0.05em;
 		white-space: nowrap;
-		box-shadow: 2px 2px 0 rgba(17, 17, 17, 0.88);
+		box-shadow: 2px 2px 0 color-mix(in oklab, var(--color-ink) 88%, transparent);
 	}
 
 	.result-grid,
@@ -2841,7 +2858,7 @@
 	}
 
 	.result-copy {
-		color: rgba(17, 17, 17, 0.76);
+		color: color-mix(in oklab, var(--color-ink) 76%, transparent);
 		font-weight: 600;
 	}
 
@@ -2853,7 +2870,7 @@
 	.result-list {
 		margin: 0;
 		padding-left: 18px;
-		color: rgba(17, 17, 17, 0.78);
+		color: color-mix(in oklab, var(--color-ink) 78%, transparent);
 		font-size: 0.86rem;
 		font-weight: 600;
 		line-height: 1.45;
@@ -2861,7 +2878,7 @@
 
 	.result-action,
 	.compare-col {
-		border: 1px solid rgba(17, 17, 17, 0.16);
+		border: 1px solid color-mix(in oklab, var(--color-ink) 16%, transparent);
 		background: var(--color-paper);
 		padding: 12px;
 	}
@@ -2869,12 +2886,21 @@
 	.result-action.winner {
 		background: var(--color-mint);
 		border-color: var(--color-ink);
+		color: #111111;
+	}
+
+	.result-action.winner .result-label {
+		color: rgba(17, 17, 17, 0.55);
+	}
+
+	.result-action.winner .result-strong {
+		color: #111111;
 	}
 
 	.shop-links-section {
 		margin-top: 12px;
 		padding: 12px;
-		border: 1px solid rgba(17, 17, 17, 0.12);
+		border: 1px solid color-mix(in oklab, var(--color-ink) 12%, transparent);
 		background: var(--color-paper);
 	}
 
@@ -2914,7 +2940,7 @@
 		position: sticky;
 		bottom: 0;
 		z-index: 25;
-		border-top: 1px solid rgba(17, 17, 17, 0.12);
+		border-top: 1px solid color-mix(in oklab, var(--color-ink) 12%, transparent);
 		background: var(--color-paper);
 		padding: 18px clamp(16px, 4vw, 48px);
 	}
@@ -2929,13 +2955,13 @@
 	.composer-box {
 		box-sizing: border-box;
 		width: 100%;
-		border: 2px solid var(--color-ink);
-		background: white;
+		border: 1px solid color-mix(in oklab, var(--color-ink) 25%, transparent);
+		background: var(--color-paper);
 		padding: 10px;
 	}
 
 	.composer-box:focus-within {
-		box-shadow: 3px 3px 0 rgba(17, 17, 17, 0.9);
+		box-shadow: 3px 3px 0 var(--theme-focus-shadow);
 	}
 
 	.composer-textarea {
@@ -2953,7 +2979,7 @@
 	}
 
 	.composer-textarea::placeholder {
-		color: rgba(17, 17, 17, 0.5);
+		color: color-mix(in oklab, var(--color-ink) 50%, transparent);
 	}
 
 	.composer-textarea:disabled {
@@ -2982,9 +3008,9 @@
 	.mode-chip {
 		flex: 1 1 96px;
 		min-height: 38px;
-		border: 1px solid rgba(17, 17, 17, 0.15);
+		border: 1px solid color-mix(in oklab, var(--color-ink) 15%, transparent);
 		background: transparent;
-		color: rgba(17, 17, 17, 0.65);
+		color: color-mix(in oklab, var(--color-ink) 65%, transparent);
 		padding: 0 10px;
 		font-size: 0.75rem;
 		font-weight: 700;
@@ -2996,11 +3022,15 @@
 			color 160ms ease;
 	}
 
-	.mode-chip:hover,
+	.mode-chip:hover {
+		border-color: var(--color-ink);
+		color: var(--color-ink);
+	}
+
 	.mode-chip:focus-visible {
 		border-color: var(--color-ink);
 		color: var(--color-ink);
-		outline: 2px solid #111;
+		outline: 2px solid var(--color-ink);
 		outline-offset: 2px;
 	}
 
@@ -3017,7 +3047,7 @@
 
 	.composer-disclaimer {
 		margin: 8px 0 0;
-		color: rgba(17, 17, 17, 0.48);
+		color: color-mix(in oklab, var(--color-ink) 48%, transparent);
 		text-align: center;
 		font-size: 0.76rem;
 		font-weight: 600;
@@ -3050,7 +3080,7 @@
 	}
 
 	.doubt-pill-text {
-		color: rgba(17, 17, 17, 0.6);
+		color: color-mix(in oklab, var(--color-ink) 60%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.04em;
@@ -3077,9 +3107,9 @@
 	}
 
 	.doubt-chip {
-		border: 1px solid rgba(17, 17, 17, 0.18);
+		border: 1px solid color-mix(in oklab, var(--color-ink) 18%, transparent);
 		background: transparent;
-		color: rgba(17, 17, 17, 0.7);
+		color: color-mix(in oklab, var(--color-ink) 70%, transparent);
 		padding: 5px 12px;
 		font-size: 0.78rem;
 		font-weight: 600;
@@ -3102,7 +3132,7 @@
 	}
 
 	.doubt-turn-badge {
-		color: rgba(17, 17, 17, 0.4);
+		color: color-mix(in oklab, var(--color-ink) 40%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -3113,8 +3143,8 @@
 
 	.activity-panel {
 		min-width: 0;
-		border-left: 1px solid rgba(17, 17, 17, 0.12);
-		background: #f7f5ef;
+		border-left: 1px solid color-mix(in oklab, var(--color-ink) 12%, transparent);
+		background: var(--color-paper-dark);
 		overflow-y: auto;
 	}
 
@@ -3127,14 +3157,14 @@
 		position: sticky;
 		top: 0;
 		z-index: 10;
-		background: #f7f5ef;
+		background: var(--color-paper-dark);
 		min-height: 64px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
 		padding: 10px 14px;
-		border-bottom: 1px solid rgba(17, 17, 17, 0.1);
+		border-bottom: 1px solid color-mix(in oklab, var(--color-ink) 10%, transparent);
 	}
 
 	.activity-title {
@@ -3145,7 +3175,7 @@
 
 	.activity-subtitle {
 		margin: 2px 0 0;
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-size: 10px;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -3176,12 +3206,12 @@
 	.activity-empty-line {
 		width: 36px;
 		height: 1px;
-		background: rgba(17, 17, 17, 0.18);
+		background: color-mix(in oklab, var(--color-ink) 18%, transparent);
 	}
 
 	.activity-empty-text {
 		margin: 0;
-		color: rgba(17, 17, 17, 0.38);
+		color: color-mix(in oklab, var(--color-ink) 38%, transparent);
 		font-size: 10px;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -3215,9 +3245,9 @@
 	}
 
 	.activity-step-status {
-		border: 1px solid rgba(17, 17, 17, 0.18);
+		border: 1px solid color-mix(in oklab, var(--color-ink) 18%, transparent);
 		padding: 1px 6px;
-		color: rgba(17, 17, 17, 0.48);
+		color: color-mix(in oklab, var(--color-ink) 48%, transparent);
 		font-size: 9px;
 		font-weight: 800;
 		text-transform: uppercase;
@@ -3249,7 +3279,7 @@
 	.scan-error-banner {
 		margin: 16px 24px 0;
 		padding: 16px;
-		background: rgba(17, 17, 17, 0.04);
+		background: color-mix(in oklab, var(--color-ink) 4%, transparent);
 		border: 1px dashed var(--color-ink);
 	}
 
@@ -3273,7 +3303,7 @@
 		flex-direction: column;
 		gap: 2px;
 		font-size: 11px;
-		color: rgba(17, 17, 17, 0.7);
+		color: color-mix(in oklab, var(--color-ink) 70%, transparent);
 		margin-bottom: 12px;
 	}
 
@@ -3293,7 +3323,7 @@
 
 	.activity-step-label {
 		margin: 3px 0 0;
-		color: rgba(17, 17, 17, 0.6);
+		color: color-mix(in oklab, var(--color-ink) 60%, transparent);
 		font-size: 12px;
 		font-weight: 600;
 		line-height: 1.35;
@@ -3301,7 +3331,7 @@
 
 	.activity-step-output {
 		margin: 5px 0 0;
-		color: rgba(17, 17, 17, 0.44);
+		color: color-mix(in oklab, var(--color-ink) 44%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		line-height: 1.4;
@@ -3309,12 +3339,12 @@
 
 	:global(.verdict-approved) {
 		background: var(--color-mint);
-		color: var(--color-ink);
+		color: #111111;
 	}
 
 	:global(.verdict-caution) {
 		background: #ffe566;
-		color: var(--color-ink);
+		color: #111111;
 	}
 
 	:global(.verdict-waste) {
@@ -3328,7 +3358,7 @@
 	}
 
 	:global(.verdict-default) {
-		background: white;
+		background: var(--color-paper);
 		color: var(--color-ink);
 	}
 
@@ -3395,7 +3425,7 @@
 			width: min(320px, calc(100vw - 68px));
 			height: 100dvh;
 			min-height: 0;
-			box-shadow: -8px 0 24px rgba(17, 17, 17, 0.12);
+			box-shadow: -8px 0 24px color-mix(in oklab, var(--color-ink) 12%, transparent);
 		}
 	}
 

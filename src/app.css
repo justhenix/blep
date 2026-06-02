@@ -72,10 +72,18 @@
 	font-display: swap;
 }
 
-:root {
-	--font-display: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
-	--font-body: 'Nunito', ui-sans-serif, system-ui, sans-serif;
-	--font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+@layer base {
+	:root {
+		--font-display: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
+		--font-body: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+		--font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+		--theme-paper: #fbfaf6;
+		--theme-paper-dark: #f1eee7;
+		--theme-ink: #111111;
+		--theme-mint: #3dffc2;
+		--theme-focus-shadow: color-mix(in oklab, var(--theme-ink) 90%, transparent);
+		color-scheme: light;
+	}
 }
 
 @theme {
@@ -83,10 +91,22 @@
 	--font-body: var(--font-body);
 	--font-sans: var(--font-body);
 	--font-mono: var(--font-mono);
-	--color-paper: #fbfaf6;
-	--color-paper-dark: #f1eee7;
-	--color-ink: #111111;
-	--color-mint: #3dffc2;
+	--color-paper: var(--theme-paper);
+	--color-paper-dark: var(--theme-paper-dark);
+	--color-ink: var(--theme-ink);
+	--color-mint: var(--theme-mint);
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+	:root.dark {
+		--theme-paper: #111111;
+		--theme-paper-dark: #1a1a1a;
+		--theme-ink: #fbfaf6;
+		--theme-focus-shadow: color-mix(in oklab, var(--theme-ink) 15%, transparent);
+		color-scheme: dark;
+	}
 }
 
 .font-display {
@@ -103,8 +123,8 @@
 
 html {
 	scroll-behavior: smooth;
-	background: #fbfaf6;
-	color: #111111;
+	background: var(--color-paper);
+	color: var(--color-ink);
 }
 
 body {
@@ -168,7 +188,7 @@ textarea {
 	}
 
 	.uiPanel {
-		@apply border-2 border-ink bg-white p-6;
+		@apply border-2 border-ink bg-paper p-6;
 	}
 
 	.uiLabel {
