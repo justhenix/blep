@@ -390,6 +390,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			trace.log('gemini_done', 'done', `mode=${result.mode}`);
 			trace.log('zod_validated', 'done');
 		} catch (error) {
+			console.error('[blep ai] GEMINI ERROR DUMP:', error);
 			const geminiCode = getAiErrorCode(error);
 			trace.log('gemini_done', 'fail', `code=${geminiCode}`);
 			return respond(buildFallbackResponse(geminiCode, trace, quota, query, sources), {

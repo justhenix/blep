@@ -16,6 +16,8 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAI } from '@ai-sdk/openai';
 
+import { env } from '$env/dynamic/private';
+
 import {
 	blepVerdictSchema,
 	blepRecommendationSchema,
@@ -45,7 +47,7 @@ type ResolvedProvider = {
 };
 
 function getEnv(name: string): string | undefined {
-	return process.env[name] ?? undefined;
+	return env[name] ?? undefined;
 }
 
 function createModel(tag: ProviderTag, modelId: string) {
@@ -108,8 +110,10 @@ function resolveProvider(): ResolvedProvider {
 	if (getEnv('OPENAI_API_KEY')) {
 		const hasCustomBase = Boolean(getEnv('OPENAI_BASE_URL'));
 		const tag: ProviderTag = hasCustomBase ? 'openai-compat' : 'openai';
-		const phase1Id = getEnv('AI_MODEL_PHASE1') ?? (hasCustomBase ? 'google/gemini-2.5-flash' : 'gpt-4o-mini');
-		const phase2Id = getEnv('AI_MODEL_PHASE2') ?? (hasCustomBase ? 'google/gemini-2.5-flash-lite' : 'gpt-4o-mini');
+		const phase1Id =
+			getEnv('AI_MODEL_PHASE1') ?? (hasCustomBase ? 'google/gemini-2.5-flash' : 'gpt-4o-mini');
+		const phase2Id =
+			getEnv('AI_MODEL_PHASE2') ?? (hasCustomBase ? 'google/gemini-2.5-flash-lite' : 'gpt-4o-mini');
 		console.info(`[blep ai] provider=${tag} phase1=${phase1Id} phase2=${phase2Id}`);
 		return {
 			tag,

@@ -88,8 +88,8 @@
 					No Warranty
 				</h2>
 				<p class="font-body text-base leading-relaxed text-ink/70 sm:text-lg">
-					BLEP is provided as-is, with no warranty of accuracy, availability, fitness
-					for a particular purpose, or non-infringement.
+					BLEP is provided as-is, with no warranty of accuracy, availability, fitness for a
+					particular purpose, or non-infringement.
 				</p>
 			</div>
 		</section>

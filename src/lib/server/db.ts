@@ -1,4 +1,5 @@
 import { createClient, type Client } from '@libsql/client';
+import { env } from '$env/dynamic/private';
 
 let _client: Client | null = null;
 let _initialized = false;
@@ -26,8 +27,8 @@ export function getDb(): Client | null {
 
 /** Read env var at runtime (SvelteKit dynamic import not available here). */
 function getEnvVar(name: string): string | undefined {
-	// Node process.env works at runtime; build-time $env not usable in lib init.
-	return process.env[name] ?? undefined;
+	// Node process.env works at runtime; SvelteKit dynamic private env can also be imported.
+	return env[name] ?? undefined;
 }
 
 // ─── Schema DDL ───────────────────────────────────────────

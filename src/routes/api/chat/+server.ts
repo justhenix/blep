@@ -6,7 +6,6 @@ import { PHASE2_SYSTEM_PROMPT, buildPhase2Content } from '$lib/blep/prompt.phase
 import { generatePhase2Chat } from '$lib/server/ai';
 import { blepEnv } from '$lib/server/env';
 
-
 // ── Request schema ──────────────────────────────────
 const chatMessageSchema = z.object({
 	role: z.enum(['user', 'assistant']),
@@ -120,7 +119,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		await new Promise((resolve) => setTimeout(resolve, 800));
 		return json({
 			ok: true,
-			reply: "This is a mocked response from BLEP. The real API is turned off locally to save credits. But basically: the seller is lying, the specs are bad, and you shouldn't buy it.",
+			reply:
+				"This is a mocked response from BLEP. The real API is turned off locally to save credits. But basically: the seller is lying, the specs are bad, and you shouldn't buy it.",
 			needsNewScan: false
 		} satisfies Phase2Response);
 	}

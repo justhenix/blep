@@ -24,8 +24,8 @@
 
 	const faqs = [
 		{
-			q: 'Why not just use Google AI Mode?',
-			a: 'Google explains specs. BLEP judges the deal. It turns listing noise into APPROVED, CAUTION, or WASTE.'
+			q: 'Why not just search manually or ask standard AI?',
+			a: 'Standard AI explains specs. BLEP judges the deal. It cuts through listing noise to give you a blunt APPROVED, CAUTION, or WASTE.'
 		},
 		{
 			q: 'What does BLEP check?',
@@ -200,7 +200,6 @@
 					it&apos;s a steal, sketchy, or wallet poison.
 				</p>
 
-
 				<div id="demo" class="mt-8 flex scroll-mt-24 flex-wrap items-center gap-3">
 					<a
 						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-paper hover:text-ink"
@@ -223,14 +222,20 @@
 				aria-label="BLEP cube mascot inside constructivist hardware verdict poster"
 			>
 				<div
-					class="absolute top-[19%] left-[24%] h-52 w-52 rounded-full border border-ink/25 dark:border-ink/45 bg-paper"
+					class="absolute top-[19%] left-[24%] h-52 w-52 rounded-full border border-ink/25 bg-paper dark:border-ink/45"
 				></div>
 				<div
 					class="absolute top-[18%] right-[10%] h-12 w-56 rotate-[-36deg] bg-paper-dark/80 dark:bg-ink/10"
 				></div>
-				<div class="absolute top-[18%] left-[12%] h-28 w-48 border border-ink/20 dark:border-ink/40"></div>
-				<div class="absolute top-[51%] left-[25%] h-px w-[65%] rotate-[-18deg] bg-ink/30 dark:bg-ink/50"></div>
-				<div class="absolute top-[28%] right-[12%] h-px w-[42%] rotate-[-36deg] bg-ink/35 dark:bg-ink/55"></div>
+				<div
+					class="absolute top-[18%] left-[12%] h-28 w-48 border border-ink/20 dark:border-ink/40"
+				></div>
+				<div
+					class="absolute top-[51%] left-[25%] h-px w-[65%] rotate-[-18deg] bg-ink/30 dark:bg-ink/50"
+				></div>
+				<div
+					class="absolute top-[28%] right-[12%] h-px w-[42%] rotate-[-36deg] bg-ink/35 dark:bg-ink/55"
+				></div>
 				<div class="plus-mark top-[31%] left-[12%]"></div>
 				<div class="plus-mark right-[10%] bottom-[15%]"></div>
 				<span

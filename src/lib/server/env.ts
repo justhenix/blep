@@ -61,14 +61,13 @@ export const validateLiveEnv = (): string[] => {
 
 	const missing: string[] = [];
 
-	if (!aiAvailable) missing.push('AI_PROVIDER_KEY (GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)');
+	if (!aiAvailable)
+		missing.push('AI_PROVIDER_KEY (GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)');
 	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
 	if (!blepEnv.hashSalt) missing.push('BLEP_HASH_SALT');
 
 	if (!dbAvailable) {
-		console.warn(
-			'[blep env] TURSO_DATABASE_URL missing — quota/cache/abuse bypassed in live mode'
-		);
+		console.warn('[blep env] TURSO_DATABASE_URL missing — quota/cache/abuse bypassed in live mode');
 	}
 
 	return missing;

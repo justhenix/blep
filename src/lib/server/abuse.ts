@@ -59,11 +59,7 @@ export const checkAndRecordAbuse = async (identityHash: string): Promise<AbuseCh
 		const blockedUntilMs = blockedUntil * 1000;
 
 		if (cooldownMs > 0 && (nowMs < blockedUntilMs || nowMs - lastRequestMs < cooldownMs)) {
-			const retryMs = Math.max(
-				blockedUntilMs - nowMs,
-				cooldownMs - (nowMs - lastRequestMs),
-				1000
-			);
+			const retryMs = Math.max(blockedUntilMs - nowMs, cooldownMs - (nowMs - lastRequestMs), 1000);
 
 			return {
 				allowed: false,

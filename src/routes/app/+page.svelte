@@ -116,8 +116,6 @@
 		}
 	};
 
-
-
 	// ── Phase 2 doubt state ──
 	type ComposerMode = 'scan' | 'doubt';
 	type DoubtMsg = { role: 'user' | 'assistant'; content: string };
@@ -1486,11 +1484,11 @@
 {/snippet}
 
 <!-- No auth required — IP-based quota -->
-		<div
-			class="app-shell {fontBody}"
-			style:--sidebar-width={sidebarWidth}
-			style:--activity-width={activityWidth}
-		>
+<div
+	class="app-shell {fontBody}"
+	style:--sidebar-width={sidebarWidth}
+	style:--activity-width={activityWidth}
+>
 	<aside id="sidebar" class="sidebar" class:collapsed aria-label="Scan history">
 		<div class="sidebar-brand">
 			<button
@@ -1502,17 +1500,33 @@
 				aria-controls="sidebar"
 			>
 				{#if theme.resolved === 'light'}
-					<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="sidebar-logo-icon" />
+					<img
+						src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+						alt=""
+						class="sidebar-logo-icon"
+					/>
 				{:else}
-					<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="sidebar-logo-icon" />
+					<img
+						src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+						alt=""
+						class="sidebar-logo-icon"
+					/>
 				{/if}
 			</button>
 			<div class="sidebar-brand-expanded">
 				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
 					{#if theme.resolved === 'light'}
-						<img src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'} alt="BLEP" class="sidebar-logo-full" />
+						<img
+							src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'}
+							alt="BLEP"
+							class="sidebar-logo-full"
+						/>
 					{:else}
-						<img src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'} alt="BLEP" class="sidebar-logo-full" />
+						<img
+							src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'}
+							alt="BLEP"
+							class="sidebar-logo-full"
+						/>
 					{/if}
 				</a>
 				<button
@@ -1527,8 +1541,6 @@
 				</button>
 			</div>
 		</div>
-
-
 
 		<button
 			class="sidebar-new"
@@ -1755,9 +1767,17 @@
 						<div class="idle-copy">
 							<div class="idle-heading-row">
 								{#if theme.resolved === 'light'}
-									<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="idle-mark" />
+									<img
+										src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+										alt=""
+										class="idle-mark"
+									/>
 								{:else}
-									<img src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'} alt="" class="idle-mark" />
+									<img
+										src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+										alt=""
+										class="idle-mark"
+									/>
 								{/if}
 								<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
 							</div>
@@ -1983,7 +2003,8 @@
 			{@render ActivityLog()}
 		</aside>
 	{/if}
-		</div>
+</div>
+
 <!-- /no-auth -->
 
 <style>

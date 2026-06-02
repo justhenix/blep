@@ -55,7 +55,7 @@ export const blepVerdictSchema = z
 			.min(1)
 			.refine((value) => maxSentenceCount(value, 2), 'roast must be 2 sentences max'),
 		summary: z.string().trim().min(1),
-		evidence: z.array(blepEvidenceSchema).min(1).max(5)
+		evidence: z.array(blepEvidenceSchema).min(1).max(3)
 	})
 	.strict();
 
@@ -109,9 +109,9 @@ export const blepRecommendationSchema = z
 					.strict()
 			)
 			.min(1)
-			.max(6),
-		deal_rules: z.array(z.string().trim().min(1)).min(1).max(6),
-		evidence: z.array(blepEvidenceSchema).max(8),
+			.max(3),
+		deal_rules: z.array(z.string().trim().min(1)).min(1).max(3),
+		evidence: z.array(blepEvidenceSchema).max(3),
 		confidence: confidenceSchema,
 		next_action: z.string().trim().min(1)
 	})
@@ -139,7 +139,7 @@ export const blepComparisonSchema = z
 			)
 			.min(2)
 			.max(4),
-		evidence: z.array(blepEvidenceSchema).max(8),
+		evidence: z.array(blepEvidenceSchema).max(3),
 		confidence: confidenceSchema
 	})
 	.strict();

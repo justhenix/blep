@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('BLEP App E2E Tests', () => {
-
 	test('Initial Load & UI State', async ({ page }) => {
 		await page.goto('/app');
 		// Add a longer timeout or wait for load state
@@ -67,7 +66,7 @@ test.describe('BLEP App E2E Tests', () => {
 		// Wait for results
 		const resultCard = page.locator('.result-card');
 		await expect(resultCard).toBeVisible({ timeout: 20000 });
-		
+
 		// Wait for recommendation result
 		await expect(page.locator('.result-badge')).toContainText('RECOMMENDATION');
 	});
@@ -93,7 +92,7 @@ test.describe('BLEP App E2E Tests', () => {
 
 		// Use a doubt chip if available, or just type a question
 		const doubtChips = page.locator('.doubt-chip');
-		if (await doubtChips.count() > 0) {
+		if ((await doubtChips.count()) > 0) {
 			await doubtChips.first().click();
 		} else {
 			await input.fill('Why?');
