@@ -116,7 +116,7 @@
 		}
 	};
 
-	// ── Phase 2 doubt state ──
+	// ── Phase 2 doubt state (per-message) ──
 	type ComposerMode = 'scan' | 'doubt';
 	type DoubtMsg = { role: 'user' | 'assistant'; content: string };
 	const MAX_DOUBT_TURNS = 5;
@@ -128,10 +128,19 @@
 	];
 
 	let composerMode = $state<ComposerMode>('scan');
-	let doubtMessages = $state<DoubtMsg[]>([]);
+	/** Per-message doubt messages, keyed by ChatMessage.id */
+	let doubtStore = $state<Record<string, DoubtMsg[]>>({});
+	/** Which blep message is currently being doubted */
+	let activeDoubtMsgId = $state<string | null>(null);
 	let doubtLoading = $state(false);
 	let doubtError = $state('');
 	let showRescanCta = $state(false);
+
+	/** Get doubt messages for the currently active doubt target */
+	const getDoubtMessages = (msgId: string | null): DoubtMsg[] => {
+		if (!msgId) return [];
+		return doubtStore[msgId] ?? [];
+	};
 
 	// ── Dynamic thinking phrases ──
 	const THINKING_PHRASES = [
@@ -232,13 +241,14 @@
 	});
 
 	/** Save current scan result to history sidebar */
-	const saveToHistory = (query: string, verdict: string) => {
+	const saveToHistory = (query: string, verdict: string, blepMsgId?: string) => {
+		const currentDoubt = blepMsgId ? (doubtStore[blepMsgId] ?? []) : [];
 		const entry: HistoryEntry = {
 			id: crypto.randomUUID(),
 			query,
 			verdict,
 			timestamp: Date.now(),
-			doubtMessages: [...doubtMessages],
+			doubtMessages: [...currentDoubt],
 			savedMessages: [...messages],
 			savedToolSteps: toolSteps.map((s) => ({ ...s })),
 			savedMode: selectedMode ?? 'verdict'
@@ -250,9 +260,10 @@
 
 	/** Update doubt messages on the active history entry */
 	const syncDoubtToHistory = () => {
-		if (!activeHistoryId) return;
+		if (!activeHistoryId || !activeDoubtMsgId) return;
+		const currentDoubt = doubtStore[activeDoubtMsgId] ?? [];
 		history = history.map((h) =>
-			h.id === activeHistoryId ? { ...h, doubtMessages: [...doubtMessages] } : h
+			h.id === activeHistoryId ? { ...h, doubtMessages: [...currentDoubt] } : h
 		);
 	};
 
@@ -811,9 +822,10 @@
 		lastScanQuery = query;
 		startThinkingCycle();
 
-		// Reset error state on new scan
+		// Reset error state on new scan — but preserve previous doubt histories
 		scanErrorCode = null;
-		doubtMessages = [];
+		composerMode = 'scan';
+		activeDoubtMsgId = null;
 		doubtLoading = false;
 		doubtError = '';
 		showRescanCta = false;
@@ -1165,7 +1177,7 @@
 			} else {
 				verdictLabel = (apiResult.verdict as string) ?? 'CAUTION';
 			}
-			saveToHistory(query, verdictLabel);
+			saveToHistory(query, verdictLabel, `${runId}-assistant`);
 		} catch (err) {
 			stopElapsedTimer();
 			for (const step of toolSteps) {
@@ -1212,8 +1224,16 @@
 	};
 
 	// ── Phase 2 doubt mode functions ──
-	const enterDoubtMode = () => {
-		if (!activePhase1Json) return;
+	const enterDoubtMode = (msgId?: string) => {
+		// Determine which message to doubt
+		const targetId = msgId ?? activeDoubtMsgId;
+		if (!targetId) return;
+
+		// Find the message and check it has phase1Json
+		const targetMsg = messages.find((m) => m.id === targetId);
+		if (!targetMsg?.phase1Json) return;
+
+		activeDoubtMsgId = targetId;
 		composerMode = 'doubt';
 		draftInput = '';
 		requestAnimationFrame(() => textareaEl?.focus());
@@ -1221,22 +1241,39 @@
 
 	const exitDoubtMode = () => {
 		composerMode = 'scan';
+		activeDoubtMsgId = null;
 		draftInput = '';
 	};
 
 	const sendDoubtQuestion = async (question: string) => {
-		if (!question.trim() || doubtLoading || doubtMaxed || !activePhase1Json) return;
+		if (!question.trim() || doubtLoading || !activeDoubtMsgId) return;
+
+		// Check turn limit for this specific message
+		const currentMsgs = doubtStore[activeDoubtMsgId] ?? [];
+		const turnCount = currentMsgs.filter((m) => m.role === 'user').length;
+		if (turnCount >= MAX_DOUBT_TURNS) return;
+
+		// Get phase1Json from the target message
+		const targetMsg = messages.find((m) => m.id === activeDoubtMsgId);
+		if (!targetMsg?.phase1Json) return;
+
+		// Find the user message that preceded this blep message for context
+		const blepIdx = messages.findIndex((m) => m.id === activeDoubtMsgId);
+		const precedingUserMsg = blepIdx > 0 ? messages[blepIdx - 1] : null;
+		const originalInput = precedingUserMsg?.role === 'user' ? precedingUserMsg.content : activeOriginalInput;
 
 		const q = question.trim();
 		draftInput = '';
 		doubtError = '';
 
-		doubtMessages = [...doubtMessages, { role: 'user', content: q }];
+		// Add user message to this message's doubt store
+		const updatedMsgs = [...currentMsgs, { role: 'user' as const, content: q }];
+		doubtStore = { ...doubtStore, [activeDoubtMsgId]: updatedMsgs };
 		doubtLoading = true;
 		scrollToBottom();
 
 		try {
-			const historyForApi = doubtMessages
+			const historyForApi = updatedMsgs
 				.slice(0, -1)
 				.map((m) => ({ role: m.role, content: m.content }));
 
@@ -1244,8 +1281,8 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					originalInput: activeOriginalInput,
-					phase1Result: activePhase1Json,
+					originalInput: originalInput,
+					phase1Result: targetMsg.phase1Json,
 					messages: historyForApi,
 					question: q
 				})
@@ -1259,7 +1296,8 @@
 			const data = await res.json();
 			if (!data.ok) throw new Error(data.error || 'chat_failed');
 
-			doubtMessages = [...doubtMessages, { role: 'assistant', content: data.reply }];
+			const withReply = [...updatedMsgs, { role: 'assistant' as const, content: data.reply }];
+			doubtStore = { ...doubtStore, [activeDoubtMsgId]: withReply };
 			syncDoubtToHistory();
 
 			if (data.needsNewScan) {
@@ -1297,7 +1335,8 @@
 		stopElapsedTimer();
 		// Reset doubt state
 		composerMode = 'scan';
-		doubtMessages = [];
+		doubtStore = {};
+		activeDoubtMsgId = null;
 		doubtLoading = false;
 		doubtError = '';
 		showRescanCta = false;
@@ -1327,11 +1366,10 @@
 
 		// Restore doubt messages from history if present
 		const savedDoubt = entry.doubtMessages ?? [];
-		doubtMessages = savedDoubt;
 		doubtLoading = false;
 		doubtError = '';
 		showRescanCta = false;
-		composerMode = savedDoubt.length > 0 ? 'doubt' : 'scan';
+		// Will restore doubt per-message below once we know the blep message ID
 
 		// Restore full saved state if available (real scans)
 		if (entry.savedMessages && entry.savedMessages.length > 0) {
@@ -1380,13 +1418,35 @@
 				output: pickRandom(AGENT_LOG_POOLS[intent][i])
 			}));
 		}
+
+		// Restore doubt per-message: find the last blep message with phase1Json
+		const lastBlepWithResult = messages.findLast((m) => m.role === 'blep' && m.phase1Json);
+		const restoredDoubtMsgId = lastBlepWithResult?.id ?? null;
+
+		// Put saved doubt into the per-message store
+		if (restoredDoubtMsgId && savedDoubt.length > 0) {
+			doubtStore = { [restoredDoubtMsgId]: [...savedDoubt] };
+			activeDoubtMsgId = restoredDoubtMsgId;
+			composerMode = 'doubt';
+		} else {
+			doubtStore = {};
+			activeDoubtMsgId = null;
+			composerMode = 'scan';
+		}
+
 		scrollToNewResponse();
 	};
 
 	// ── Phase 2 derived state ──
-	const doubtTurnCount = $derived(doubtMessages.filter((m) => m.role === 'user').length);
+	const activeDoubtMessages = $derived(getDoubtMessages(activeDoubtMsgId));
+	const doubtTurnCount = $derived(activeDoubtMessages.filter((m) => m.role === 'user').length);
 	const doubtMaxed = $derived(doubtTurnCount >= MAX_DOUBT_TURNS);
 	const activePhase1Json = $derived.by(() => {
+		// If actively doubting, use that message's phase1Json
+		if (activeDoubtMsgId) {
+			const target = messages.find((m) => m.id === activeDoubtMsgId);
+			if (target?.phase1Json) return target.phase1Json;
+		}
 		const last = messages.findLast((m) => m.role === 'blep' && m.phase1Json);
 		return last?.phase1Json ?? null;
 	});
@@ -1441,7 +1501,8 @@
 				return;
 			if (e.key === 'x' && mode === 'done' && activePhase1Json && composerMode === 'scan') {
 				e.preventDefault();
-				enterDoubtMode();
+				const lastBlep = messages.findLast((m) => m.role === 'blep' && m.phase1Json);
+				if (lastBlep?.id) enterDoubtMode(lastBlep.id);
 			}
 		};
 		window.addEventListener('keydown', handleGlobalKeydown);
@@ -1551,7 +1612,7 @@
 				</button>
 			</div>
 
-			{#if doubtMessages.length === 0 && !doubtMaxed}
+			{#if activeDoubtMessages.length === 0 && !doubtMaxed}
 				<div class="doubt-chips-row">
 					{#each DOUBT_CHIPS as chip (chip)}
 						<button
@@ -2064,18 +2125,22 @@
 											</div>
 
 											{#if blepMsg.phase1Json && blepMsg.result}
+												{@const msgDoubt = doubtStore[blepMsg.id ?? ''] ?? []}
+												{@const isThisMsgDoubted = composerMode === 'doubt' && activeDoubtMsgId === blepMsg.id}
+												{@const thisTurnCount = msgDoubt.filter((m) => m.role === 'user').length}
 												<FollowUpChat
-													{doubtMessages}
-													isLoading={doubtLoading}
-													errorMsg={doubtError}
-													{showRescanCta}
-													turnCount={doubtTurnCount}
+													doubtMessages={msgDoubt}
+													isLoading={isThisMsgDoubted && doubtLoading}
+													errorMsg={isThisMsgDoubted ? doubtError : ''}
+													showRescanCta={isThisMsgDoubted && showRescanCta}
+													turnCount={thisTurnCount}
 													maxTurns={MAX_DOUBT_TURNS}
-													isDoubtActive={composerMode === 'doubt'}
-													onDoubtClick={enterDoubtMode}
+													isDoubtActive={isThisMsgDoubted}
+													onDoubtClick={() => enterDoubtMode(blepMsg.id)}
 													onRescan={() => {
-														const lastUserMsg = messages.findLast((mm) => mm.role === 'user');
-														const contextQuery = lastUserMsg?.content ?? lastScanQuery ?? '';
+														const blepMsgIdx = messages.findIndex((mm) => mm.id === blepMsg.id);
+														const precedingUser = blepMsgIdx > 0 ? messages[blepMsgIdx - 1] : null;
+														const contextQuery = precedingUser?.role === 'user' ? precedingUser.content : lastScanQuery ?? '';
 														exitDoubtMode();
 														draftInput = contextQuery;
 														requestAnimationFrame(() => textareaEl?.focus());
