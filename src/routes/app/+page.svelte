@@ -167,8 +167,6 @@
 
 	// ── Scan error state ──
 	let scanErrorCode = $state<string | null>(null);
-	let scanStage = $state<string | null>(null);
-	let scanTraceId = $state<string | null>(null);
 
 	let lastScanQuery = $state<string | null>(null);
 
@@ -375,26 +373,26 @@
 	const AGENT_LOG_POOLS: Record<Intent, string[][]> = {
 		verdict: [
 			['intent → verdict scan', 'routing to verdict judge', 'VERDICT_SCAN locked'],
-			['parsing listing data...', 'extracting device + price', 'reading seller claims'],
-			['checking live prices IDR', 'scanning tokped/shopee bracket', 'market reality check'],
-			['pulling spec sheet', 'CPU/GPU/RAM extracted', 'spec validation running'],
-			['sniffing seller cope...', 'trap scan: soldered RAM?', 'checking thermal complaints'],
+			['parsing listing data...', 'extracting device + price', 'reading seller claims', 'scanning listing metadata'],
+			['checking live prices IDR', 'scanning tokped/shopee bracket', 'market reality check', 'cross-referencing competitor listings', 'price bracket validated'],
+			['pulling spec sheet', 'CPU/GPU/RAM extracted', 'spec validation running', 'thermal data cross-referenced', 'checking benchmark archives'],
+			['sniffing seller cope...', 'trap scan: soldered RAM?', 'checking thermal complaints', 'upgrade path analysis', 'checking forum complaint density'],
 			['building verdict card', 'rendering judgment', 'verdict locked. done.']
 		],
 		recommendation: [
 			['intent → recommendation', 'budget request detected', 'RECOMMENDATION_SCAN locked'],
-			['parsing budget ceiling', 'budget: reading IDR target', 'constraint extraction'],
-			['hunting current listings', 'scanning marketplace bracket', 'price bracket mapped'],
-			['finding target spec class', 'GPU tier selection running', 'acceptable hardware filtered'],
-			['rejecting overpriced traps', 'trap scan: 8GB soldered?', 'filtering RGB tax'],
+			['parsing budget ceiling', 'budget: reading IDR target', 'constraint extraction', 'use case mapped'],
+			['hunting current listings', 'scanning marketplace bracket', 'price bracket mapped', 'checking availability across stores', 'comparing seller prices'],
+			['finding target spec class', 'GPU tier selection running', 'acceptable hardware filtered', 'thermal profiles checked', 'shortlisting candidates'],
+			['rejecting overpriced traps', 'trap scan: 8GB soldered?', 'filtering RGB tax', 'upgrade path scored', 'checking return/warranty'],
 			['building shortlist', 'recommendation panel ready', 'picks locked. done.']
 		],
 		comparison: [
 			['intent → comparison', 'two devices detected', 'COMPARISON_SCAN locked'],
-			['parsing option A + B', 'extracting both configs', 'device pair identified'],
-			['checking prices for both', 'benchmark data lookup', 'market position compared'],
-			['spec diff running', 'thermal + chassis scored', 'side-by-side built'],
-			['checking trap asymmetry', 'RAM/storage lock check', 'upgrade path compared'],
+			['parsing option A + B', 'extracting both configs', 'device pair identified', 'normalizing spec formats'],
+			['checking prices for both', 'benchmark data lookup', 'market position compared', 'verifying current street price', 'cross-checking discount validity'],
+			['spec diff running', 'thermal + chassis scored', 'side-by-side built', 'CPU multi-thread compared', 'GPU benchmark delta calculated'],
+			['checking trap asymmetry', 'RAM/storage lock check', 'upgrade path compared', 'checking hidden downgrades', 'forum sentiment scored'],
 			['winner selected', 'comparison card built', 'judgment rendered. done.']
 		]
 	};
@@ -733,8 +731,10 @@
 
 		// Reset error state on new scan
 		scanErrorCode = null;
-		scanStage = null;
-		scanTraceId = null;
+		doubtMessages = [];
+		doubtLoading = false;
+		doubtError = '';
+		showRescanCta = false;
 
 		if (brainJuice <= 0) {
 			messages = [
@@ -849,20 +849,59 @@
 			const pools = AGENT_LOG_POOLS[guessedIntent];
 			const lastIdx = toolSteps.length - 1;
 
+			// Weight map: how relatively "heavy" each step type is.
+			// Higher weight = more time spent if fetch is still running.
+			const STEP_WEIGHTS: Record<string, number> = {
+				intent: 0.5,    // instant: local classification
+				listing: 1.5,   // parsing: moderate
+				option: 1.5,    // parsing: moderate
+				budget: 1.0,    // parsing: light
+				market: 3.0,    // scraping: heavy network call
+				spec: 2.5,      // extraction/comparison: heavy
+				trap: 2.0,      // analysis: moderate-heavy
+				verdict: 0.8,   // rendering: fast once data exists
+				winner: 0.8     // rendering: fast once data exists
+			};
+
+			const getWeight = (stepId: string) => STEP_WEIGHTS[stepId] ?? 1.5;
+
+			// Total weight determines proportional timing
+			const totalWeight = toolSteps.reduce((sum, s) => sum + getWeight(s.id), 0);
+
+			// Sub-step output cycling — show multiple outputs for heavy steps
+			const cycleOutput = async (
+				stepIdx: number,
+				durationMs: number,
+				pool: string[]
+			) => {
+				if (pool.length <= 1 || durationMs < 600) return;
+				const cycleInterval = Math.max(400, durationMs / Math.min(pool.length, 3));
+				let cycles = 0;
+				const maxCycles = Math.min(pool.length - 1, Math.floor(durationMs / cycleInterval));
+
+				while (cycles < maxCycles && !fetchDone) {
+					await delay(cycleInterval + Math.random() * 200);
+					if (fetchDone) break;
+					cycles++;
+					toolSteps[stepIdx].output = pool[cycles % pool.length];
+				}
+			};
+
 			for (let i = 0; i < toolSteps.length; i++) {
-				// Fetch done → flush remaining instantly with honest statuses
+				// Fetch done → flush remaining quickly but not instantly (feels real)
 				if (fetchDone && i > 0) {
 					for (let j = i; j < toolSteps.length; j++) {
+						// Small stagger so steps don't all pop at once
+						await delay(60 + Math.random() * 120);
+
 						if (fetchError) {
-							// Hard error: mark remaining as skipped, last as fail
 							toolSteps[j].status = j === lastIdx ? 'fail' : 'skipped';
 							toolSteps[j].output = j === lastIdx ? 'scan aborted.' : 'skipped.';
 						} else if (isFallback()) {
-							// Soft fail: mark remaining done but last as fallback
 							toolSteps[j].status = j === lastIdx ? 'fallback' : 'done';
 							toolSteps[j].output =
 								j === lastIdx
-									? `fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`
+									? 'blep is busy, try again shortly.'
 									: pickRandom(pools[j]);
 						} else {
 							toolSteps[j].status = 'done';
@@ -873,15 +912,16 @@
 				}
 
 				toolSteps[i].status = 'running';
+				const weight = getWeight(toolSteps[i].id);
 
 				if (i === lastIdx && !fetchDone) {
-					// Last step: hold + pulse until fetch resolves
+					// Last step: brief pulse then resolve. Don't camp here forever.
 					const baseLabel = toolSteps[i].label;
 					let dots = 0;
 					const pulseInterval = setInterval(() => {
 						dots = (dots + 1) % 4;
 						toolSteps[i].label = baseLabel + '.'.repeat(dots);
-					}, 400);
+					}, 350);
 
 					while (!fetchDone) {
 						await delay(100);
@@ -889,21 +929,51 @@
 					clearInterval(pulseInterval);
 					toolSteps[i].label = baseLabel;
 
-					// Match output to fetch outcome with honest status
+					// Small "processing" delay so it doesn't snap instantly
+					await delay(150 + Math.random() * 250);
+
 					if (fetchError) {
 						toolSteps[i].status = 'fail';
 						toolSteps[i].output = 'scan aborted.';
 					} else if (isFallback()) {
 						toolSteps[i].status = 'fallback';
-						toolSteps[i].output =
-							`fallback: ${(fetchResult as Record<string, unknown>)?.error_code ?? 'unknown'}`;
+						toolSteps[i].output = 'blep is busy, try again shortly.';
 					} else {
 						toolSteps[i].status = 'done';
 						toolSteps[i].output = pickRandom(pools[i]);
 					}
 				} else {
-					// Normal step: short delay if fetch already done, otherwise show progress
-					await delay(fetchDone ? 10 + Math.random() * 40 : 400 + Math.random() * 800);
+					// Proportional delay: heavier steps wait longer when fetch is running.
+					// If fetch is done, use a quick completion delay.
+					const proportion = weight / totalWeight;
+
+					// Base timing: fetch running → distribute ~6-10s across all steps
+					// Fetch done → fast flush 50-150ms
+					let stepDelay: number;
+					if (fetchDone) {
+						stepDelay = 50 + Math.random() * 100;
+					} else {
+						// Target: 800ms–2500ms per step based on weight, with jitter
+						const baseMs = proportion * 8000;
+						const jitter = (Math.random() - 0.3) * baseMs * 0.5;
+						stepDelay = Math.max(300, Math.min(baseMs + jitter, 3500));
+					}
+
+					// Set initial output
+					toolSteps[i].output = pickRandom(pools[i]);
+
+					// For heavy steps (market, spec), cycle through sub-outputs during wait
+					if (weight >= 2.0 && !fetchDone && stepDelay > 800) {
+						await cycleOutput(i, stepDelay, pools[i]);
+						// Remaining time after cycling
+						const elapsed = stepDelay * 0.3;
+						if (elapsed > 0 && !fetchDone) {
+							await delay(elapsed);
+						}
+					} else {
+						await delay(stepDelay);
+					}
+
 					toolSteps[i].status = 'done';
 					toolSteps[i].output = pickRandom(pools[i]);
 				}
@@ -938,8 +1008,6 @@
 			// Capture error state from backend response
 			if (apiData.ok === false) {
 				scanErrorCode = (apiData.error_code as string) ?? null;
-				scanStage = (apiData.stage as string) ?? null;
-				scanTraceId = (apiData.traceId as string) ?? null;
 			}
 
 			// Update brainJuice from backend quota — but ignore fake/declined quotas
@@ -981,8 +1049,7 @@
 				scrollToBottom();
 				return;
 			} else if (isFallback()) {
-				const stageLabel = scanStage ?? 'unknown';
-				content = `Live scan hit a bump at ${stageLabel}. Fallback result below — not final.`;
+				content = `BLEP is busy right now. Try again in a moment!`;
 			} else if (resolvedIntent === 'comparison') {
 				content = 'Comparison complete. See the breakdown below.';
 			} else if (resolvedIntent === 'recommendation') {
@@ -1079,10 +1146,6 @@
 	const exitDoubtMode = () => {
 		composerMode = 'scan';
 		draftInput = '';
-		doubtMessages = [];
-		doubtLoading = false;
-		doubtError = '';
-		showRescanCta = false;
 	};
 
 	const sendDoubtQuestion = async (question: string) => {
@@ -1164,8 +1227,6 @@
 		showRescanCta = false;
 		// Reset error state
 		scanErrorCode = null;
-		scanStage = null;
-		scanTraceId = null;
 
 		lastScanQuery = null;
 	};
@@ -1501,13 +1562,13 @@
 			>
 				{#if theme.resolved === 'light'}
 					<img
-						src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+						src="/logo-main.svg"
 						alt=""
 						class="sidebar-logo-icon"
 					/>
 				{:else}
 					<img
-						src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+						src="/logo-white.svg"
 						alt=""
 						class="sidebar-logo-icon"
 					/>
@@ -1517,13 +1578,13 @@
 				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
 					{#if theme.resolved === 'light'}
 						<img
-							src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'}
+							src="/logo-full-main.svg"
 							alt="BLEP"
 							class="sidebar-logo-full"
 						/>
 					{:else}
 						<img
-							src={theme.resolved === 'dark' ? '/logo-full-white.svg' : '/logo-full-main.svg'}
+							src="/logo-full-white.svg"
 							alt="BLEP"
 							class="sidebar-logo-full"
 						/>
@@ -1768,13 +1829,13 @@
 							<div class="idle-heading-row">
 								{#if theme.resolved === 'light'}
 									<img
-										src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+										src="/logo-main.svg"
 										alt=""
 										class="idle-mark"
 									/>
 								{:else}
 									<img
-										src={theme.resolved === 'dark' ? '/logo-white.svg' : '/logo-main.svg'}
+										src="/logo-white.svg"
 										alt=""
 										class="idle-mark"
 									/>
@@ -1819,19 +1880,11 @@
 												{#if scanErrorCode}
 													<div class="scan-error-banner">
 														<div class="scan-error-header">
-															<span class="scan-error-icon" aria-hidden="true">⚠</span>
-															<span class="scan-error-title {fontDisplay}">Live scan failed</span>
-														</div>
-														<div class="scan-error-details {fontMono}">
-															<span>Broke at: <strong>{scanStage ?? 'unknown'}</strong></span>
-															<span>Error: <strong>{scanErrorCode}</strong></span>
-															{#if scanTraceId}
-																<span>Trace: <strong>{scanTraceId}</strong></span>
-															{/if}
+															<span class="scan-error-icon" aria-hidden="true">⏳</span>
+															<span class="scan-error-title {fontDisplay}">BLEP is busy</span>
 														</div>
 														<p class="scan-error-explain {fontBody}">
-															BLEP returned a safe fallback, not a final verdict. Do not buy based
-															on this result alone.
+															BLEP couldn't complete the full scan right now. Try again in a moment — results may improve.
 														</p>
 														<button
 															type="button"
@@ -1841,7 +1894,7 @@
 															}}
 															disabled={mode === 'running' || !lastScanQuery}
 														>
-															Retry live scan
+															Try again
 														</button>
 													</div>
 												{/if}
@@ -2108,7 +2161,7 @@
 	.log-toggle:focus-visible {
 		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
 		outline: none;
-		border: 0;
+		border-color: transparent;
 		box-shadow: none;
 	}
 
@@ -2961,7 +3014,6 @@
 		position: sticky;
 		bottom: 0;
 		z-index: 25;
-		border-top: 1px solid color-mix(in oklab, var(--color-ink) 12%, transparent);
 		background: var(--color-paper);
 		padding: 18px clamp(16px, 4vw, 48px);
 	}
@@ -3044,7 +3096,8 @@
 	}
 
 	.mode-chip:hover {
-		border-color: var(--color-ink);
+		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
+		border-color: transparent;
 		color: var(--color-ink);
 	}
 

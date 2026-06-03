@@ -48,7 +48,7 @@
 		<div class="flex items-center gap-4">
 			<ThemeToggle />
 			<a
-				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-paper hover:text-ink"
+				class="focus-visible-ring inline-flex h-11 items-center border-[1.5px] border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-ink/85 hover:text-paper"
 				href="/app"
 			>
 				Ask BLEP

@@ -13,6 +13,7 @@
 
 import { generateObject, generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createVertex } from '@ai-sdk/google-vertex';
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import { createOpenAI } from '@ai-sdk/openai';
 
@@ -38,7 +39,7 @@ import type { BlepErrorCode } from '$lib/server/errors';
 
 // ─── Provider Detection ────────────────────────────────
 
-type ProviderTag = 'google' | 'deepseek' | 'openai' | 'openai-compat';
+type ProviderTag = 'vertex' | 'google' | 'deepseek' | 'openai' | 'openai-compat';
 
 type ResolvedProvider = {
 	tag: ProviderTag;
@@ -52,6 +53,13 @@ function getEnv(name: string): string | undefined {
 
 function createModel(tag: ProviderTag, modelId: string) {
 	switch (tag) {
+		case 'vertex': {
+			const vertex = createVertex({
+				project: getEnv('GOOGLE_CLOUD_PROJECT') ?? 'henixhacking',
+				location: getEnv('GOOGLE_CLOUD_LOCATION') ?? 'us-central1'
+			});
+			return vertex(modelId);
+		}
 		case 'google': {
 			const google = createGoogleGenerativeAI({
 				apiKey: getEnv('GOOGLE_GENERATIVE_AI_API_KEY') ?? getEnv('GEMINI_API_KEY') ?? ''
@@ -82,11 +90,25 @@ function createModel(tag: ProviderTag, modelId: string) {
 
 /** Auto-detect which provider to use from env keys. */
 function resolveProvider(): ResolvedProvider {
-	// Google Gemini (native / AI Studio / Cloud Console)
-	if (getEnv('GOOGLE_GENERATIVE_AI_API_KEY') || getEnv('GEMINI_API_KEY')) {
+	// Vertex AI — bills through GCP project credits, NOT API key
+	// Priority: use Vertex when GOOGLE_CLOUD_PROJECT is set (or USE_VERTEX=true)
+	if (getEnv('USE_VERTEX') === 'true' || getEnv('GOOGLE_CLOUD_PROJECT')) {
 		const phase1Id = getEnv('AI_MODEL_PHASE1') ?? 'gemini-2.5-flash';
 		const phase2Id = getEnv('AI_MODEL_PHASE2') ?? 'gemini-2.5-flash-lite';
-		console.info(`[blep ai] provider=google phase1=${phase1Id} phase2=${phase2Id}`);
+		const project = getEnv('GOOGLE_CLOUD_PROJECT') ?? 'henixhacking';
+		console.info(`[blep ai] provider=vertex project=${project} phase1=${phase1Id} phase2=${phase2Id}`);
+		return {
+			tag: 'vertex',
+			phase1Model: createModel('vertex', phase1Id),
+			phase2Model: createModel('vertex', phase2Id)
+		};
+	}
+
+	// Google Gemini (AI Studio — free tier, uses API key, no billing)
+	if (getEnv('GOOGLE_GENERATIVE_AI_API_KEY') || getEnv('GEMINI_API_KEY')) {
+		const phase1Id = getEnv('AI_MODEL_PHASE1') ?? 'gemini-3.1-flash-lite';
+		const phase2Id = getEnv('AI_MODEL_PHASE2') ?? 'gemini-3.1-flash-lite';
+		console.info(`[blep ai] provider=google(ai-studio) phase1=${phase1Id} phase2=${phase2Id}`);
 		return {
 			tag: 'google',
 			phase1Model: createModel('google', phase1Id),
@@ -186,8 +208,8 @@ export async function generatePhase1(
 
 	try {
 		const { object } = await generateObject({
-			model: provider.phase1Model,
-			schema: config.schema,
+			model: provider.phase1Model as any,
+			schema: config.schema as any,
 			system: config.system,
 			prompt: userPrompt,
 			temperature: 0.3,

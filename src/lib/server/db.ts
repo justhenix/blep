@@ -64,6 +64,11 @@ const SCHEMA_SQL = [
 		expires_at      INTEGER NOT NULL,
 		created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
 		PRIMARY KEY (identity_hash, date)
+	)`,
+	`CREATE TABLE IF NOT EXISTS global_usage (
+		date         TEXT PRIMARY KEY,
+		scan_count   INTEGER NOT NULL DEFAULT 0,
+		updated_at   INTEGER NOT NULL DEFAULT (unixepoch())
 	)`
 ];
 

@@ -43,6 +43,7 @@
 	"dependencies": {
 		"@ai-sdk/deepseek": "^0.1.0",
 		"@ai-sdk/google": "^1.1.0",
+		"@ai-sdk/google-vertex": "^2.2.27",
 		"@ai-sdk/openai": "^1.1.0",
 		"@libsql/client": "^0.14.0",
 		"@types/animejs": "^3.1.13",

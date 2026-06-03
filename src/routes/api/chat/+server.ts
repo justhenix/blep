@@ -91,13 +91,46 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ ok: false, error: 'bad_json' } satisfies Phase2ErrorResponse, { status: 400 });
 	}
 
+	// Truncate massively long inputs to prevent persistent Zod failures
+	if (body && typeof body === 'object') {
+		const typedBody = body as Record<string, unknown>;
+		if (Array.isArray(typedBody.messages)) {
+			typedBody.messages = typedBody.messages.map((m: unknown) => {
+				if (m && typeof m === 'object') {
+					const msg = m as Record<string, unknown>;
+					return {
+						...msg,
+						content: typeof msg.content === 'string' ? msg.content.slice(0, 1999) : msg.content
+					};
+				}
+				return m;
+			});
+		}
+		if (typeof typedBody.originalInput === 'string') {
+			typedBody.originalInput = typedBody.originalInput.slice(0, 500);
+		}
+	}
+
 	const parsed = chatRequestSchema.safeParse(body);
 
 	if (!parsed.success) {
-		const paths = parsed.error.issues.map((i) => i.path.join('.') || 'body').slice(0, 5);
-		console.warn(`[blep chat] bad_input paths=${JSON.stringify(paths)}`);
+		// Before failing on length, check if it's a jailbreak attempt hiding in a huge string
+		const rawQuestion = typeof (body as Record<string, unknown>)?.question === 'string' ? ((body as Record<string, unknown>).question as string).toLowerCase() : '';
+		if (rawQuestion.includes('ignore all') || rawQuestion.includes('jailbreak') || rawQuestion.includes('dan') || rawQuestion.includes('system prompt') || rawQuestion.includes('forget previous') || rawQuestion.includes('discard any') || rawQuestion.includes('write a python') || rawQuestion.includes('developer mode')) {
+			return json({ ok: true, reply: "You think you're smart eh? Try again, I dare you.", needsNewScan: false } satisfies Phase2Response);
+		}
 
-		return json({ ok: false, error: 'bad_input' } satisfies Phase2ErrorResponse, { status: 400 });
+		const paths = parsed.error.issues.map((i) => i.path.join('.') || 'body').slice(0, 5);
+		const codes = parsed.error.issues.map((i) => i.code).slice(0, 5);
+		console.warn(`[blep chat] bad_input paths=${JSON.stringify(paths)} codes=${JSON.stringify(codes)}`);
+
+		// Generate friendly error
+		let friendlyError = 'BLEP did not understand that input. Keep it simple and short.';
+		if (codes.includes('too_big')) {
+			friendlyError = 'That message is too long! BLEP only reads short questions (max 500 chars).';
+		}
+
+		return json({ ok: false, error: friendlyError } satisfies Phase2ErrorResponse, { status: 400 });
 	}
 
 	const { originalInput, phase1Result, messages, question } = parsed.data;

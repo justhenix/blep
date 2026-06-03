@@ -202,13 +202,13 @@
 
 				<div id="demo" class="mt-8 flex scroll-mt-24 flex-wrap items-center gap-3">
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-paper hover:text-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink bg-ink px-6 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-ink/85 hover:text-paper"
 						href="/app"
 					>
 						Ask BLEP
 					</a>
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-paper px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-ink"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-paper px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:bg-ink/[.06] hover:border-transparent"
 						href="/app?q=Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050, which one?"
 					>
 						Compare laptops
