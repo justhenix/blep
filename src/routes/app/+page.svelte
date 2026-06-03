@@ -623,6 +623,19 @@
 		}
 	};
 
+	const scrollToNewResponse = async () => {
+		await tick();
+		if (chatViewportEl) {
+			const chatRuns = chatViewportEl.querySelectorAll('.chat-run');
+			if (chatRuns.length > 0) {
+				const lastRun = chatRuns[chatRuns.length - 1];
+				lastRun.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			} else {
+				chatViewportEl.scrollTop = chatViewportEl.scrollHeight;
+			}
+		}
+	};
+
 	// ── API response → UI result adapters ──
 	const apiModeToLocal = (mode: string): Intent => {
 		switch (mode) {
@@ -1109,7 +1122,7 @@
 		} finally {
 			stopThinkingCycle();
 			mode = 'done';
-			scrollToBottom();
+			scrollToNewResponse();
 		}
 	}
 
@@ -1304,7 +1317,7 @@
 				output: pickRandom(AGENT_LOG_POOLS[intent][i])
 			}));
 		}
-		scrollToBottom();
+		scrollToNewResponse();
 	};
 
 	// ── Phase 2 derived state ──
@@ -2760,6 +2773,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 24px;
+		scroll-margin-top: 24px;
 	}
 
 	.idle-stack {
