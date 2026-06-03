@@ -11,7 +11,7 @@ const envPath = resolve(__dirname, '..', '.env');
 let envContent = '';
 try {
 	envContent = readFileSync(envPath, 'utf-8');
-} catch (e) {
+} catch {
 	console.warn('[reset-quota] Could not read .env file');
 }
 
@@ -62,47 +62,10 @@ async function main() {
 		}
 	}
 
-	// 2. Reset Firestore Quota
-	const credsPath = env.GOOGLE_APPLICATION_CREDENTIALS;
-	const projectId = env.FIREBASE_PROJECT_ID;
-
-	if (credsPath && projectId) {
-		console.log(`[reset-quota] Resetting Firestore quotas for ${today}...`);
-		try {
-			const { initializeApp, cert } = require('firebase-admin/app');
-			const { getFirestore } = require('firebase-admin/firestore');
-			const serviceAccount = JSON.parse(readFileSync(credsPath, 'utf-8'));
-
-			initializeApp({
-				credential: cert(serviceAccount),
-				projectId
-			});
-
-			const db = getFirestore();
-			const quotasRef = db.collection('quotas');
-			const snapshot = await quotasRef.where('date', '==', today).get();
-
-			if (snapshot.empty) {
-				console.log('[reset-quota] No Firestore quota docs found for today. Already clean.');
-			} else {
-				const batch = db.batch();
-				let count = 0;
-				snapshot.forEach((doc) => {
-					console.log(`  deleting Firestore doc ${doc.id} (used=${doc.get('used')})`);
-					batch.delete(doc.ref);
-					count++;
-				});
-				await batch.commit();
-				console.log(`[reset-quota] Deleted ${count} Firestore quota doc(s).`);
-			}
-			performedReset = true;
-		} catch (err) {
-			console.error('[reset-quota] Firestore reset failed:', err.message);
-		}
-	}
-
 	if (!performedReset) {
-		console.error('[reset-quota] No active database configuration found in .env (either TURSO_DATABASE_URL or GOOGLE_APPLICATION_CREDENTIALS/FIREBASE_PROJECT_ID required).');
+		console.error(
+			'[reset-quota] No active database configuration found in .env (TURSO_DATABASE_URL required).'
+		);
 		process.exit(1);
 	}
 }

@@ -115,14 +115,32 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (!parsed.success) {
 		// Before failing on length, check if it's a jailbreak attempt hiding in a huge string
-		const rawQuestion = typeof (body as Record<string, unknown>)?.question === 'string' ? ((body as Record<string, unknown>).question as string).toLowerCase() : '';
-		if (rawQuestion.includes('ignore all') || rawQuestion.includes('jailbreak') || rawQuestion.includes('dan') || rawQuestion.includes('system prompt') || rawQuestion.includes('forget previous') || rawQuestion.includes('discard any') || rawQuestion.includes('write a python') || rawQuestion.includes('developer mode')) {
-			return json({ ok: true, reply: "You think you're smart eh? Try again, I dare you.", needsNewScan: false } satisfies Phase2Response);
+		const rawQuestion =
+			typeof (body as Record<string, unknown>)?.question === 'string'
+				? ((body as Record<string, unknown>).question as string).toLowerCase()
+				: '';
+		if (
+			rawQuestion.includes('ignore all') ||
+			rawQuestion.includes('jailbreak') ||
+			rawQuestion.includes('dan') ||
+			rawQuestion.includes('system prompt') ||
+			rawQuestion.includes('forget previous') ||
+			rawQuestion.includes('discard any') ||
+			rawQuestion.includes('write a python') ||
+			rawQuestion.includes('developer mode')
+		) {
+			return json({
+				ok: true,
+				reply: "You think you're smart eh? Try again, I dare you.",
+				needsNewScan: false
+			} satisfies Phase2Response);
 		}
 
 		const paths = parsed.error.issues.map((i) => i.path.join('.') || 'body').slice(0, 5);
 		const codes = parsed.error.issues.map((i) => i.code).slice(0, 5);
-		console.warn(`[blep chat] bad_input paths=${JSON.stringify(paths)} codes=${JSON.stringify(codes)}`);
+		console.warn(
+			`[blep chat] bad_input paths=${JSON.stringify(paths)} codes=${JSON.stringify(codes)}`
+		);
 
 		// Generate friendly error
 		let friendlyError = 'BLEP did not understand that input. Keep it simple and short.';

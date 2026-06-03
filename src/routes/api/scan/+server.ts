@@ -19,7 +19,6 @@ import { lookupCache, storeCache } from '$lib/server/cache';
 import { blepEnv, validateLiveEnv } from '$lib/server/env';
 import {
 	BlepApiError,
-	blepError,
 	safeParseJson,
 	toScanErrorCode,
 	type BlepErrorCode
@@ -265,8 +264,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		trace.log('request_validated', 'fail', 'zod_validation');
 
 		// Check if it's a jailbreak attempt hiding in a huge string before failing
-		const rawQuery = typeof (body as Record<string, unknown>)?.query === 'string' ? ((body as Record<string, unknown>).query as string).toLowerCase() : '';
-		if (rawQuery.includes('ignore all') || rawQuery.includes('jailbreak') || rawQuery.includes('dan') || rawQuery.includes('system prompt') || rawQuery.includes('forget previous')) {
+		const rawQuery =
+			typeof (body as Record<string, unknown>)?.query === 'string'
+				? ((body as Record<string, unknown>).query as string).toLowerCase()
+				: '';
+		if (
+			rawQuery.includes('ignore all') ||
+			rawQuery.includes('jailbreak') ||
+			rawQuery.includes('dan') ||
+			rawQuery.includes('system prompt') ||
+			rawQuery.includes('forget previous')
+		) {
 			return respond(
 				json({
 					result: {
@@ -299,11 +307,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			);
 		}
 
-		const inputError = blepError('bad_input', 400);
 		logInputIssues(parsed.error.issues);
 		const codes = parsed.error.issues.map((i) => i.code).slice(0, 5);
 
-		let friendlyMessage = inputError.publicMessage;
+		let friendlyMessage: string;
 		if (codes.includes('too_big')) {
 			friendlyMessage = 'Your text is too long! BLEP only reads short inputs (max 500 chars).';
 		} else {

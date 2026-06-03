@@ -73,7 +73,13 @@
 				<span class="doubt-x" aria-hidden="true">✕</span>
 				{#if doubtMessages.length > 0}
 					Resume doubt
-					<svg class="doubt-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+					<svg
+						class="doubt-chevron"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="3"
+					>
 						<path d="M6 9l6 6 6-6" />
 					</svg>
 				{:else}

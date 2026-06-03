@@ -208,7 +208,7 @@
 						Ask BLEP
 					</a>
 					<a
-						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-paper px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:bg-ink/6 hover:border-transparent"
+						class="focus-visible-ring inline-flex min-h-12 items-center border border-ink/35 bg-paper px-6 font-display text-sm font-semibold tracking-[0.01em] text-ink transition hover:border-transparent hover:bg-ink/6"
 						href="/app?q=Lenovo LOQ RTX 4050 vs Acer Nitro V RTX 4050, which one?"
 					>
 						Compare laptops

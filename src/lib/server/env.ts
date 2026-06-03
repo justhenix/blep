@@ -66,7 +66,9 @@ export const validateLiveEnv = (): string[] => {
 	const missing: string[] = [];
 
 	if (!aiAvailable)
-		missing.push('AI_PROVIDER_KEY (USE_VERTEX or GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)');
+		missing.push(
+			'AI_PROVIDER_KEY (USE_VERTEX or GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)'
+		);
 	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
 	if (!blepEnv.hashSalt) missing.push('BLEP_HASH_SALT');
 
