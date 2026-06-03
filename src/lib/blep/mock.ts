@@ -21,28 +21,28 @@ const fallbackEvidenceUrl = 'https://example.com/blep/mock-evidence';
  */
 export const makeSafeFallback = (
 	query = 'Unknown device',
-	reason = 'Unknown error',
-	stage = 'unknown',
-	traceId = 'none'
+	_reason = 'Unknown error',
+	_stage = 'unknown',
+	_traceId = 'none'
 ): BlepVerdict =>
 	blepVerdictSchema.parse({
 		name: query.trim() || 'Unknown device',
 		verdict: 'CAUTION',
 		landfill_year: 2028,
-		fatal_flaw: `Live evidence failed at ${stage}. BLEP cannot prove value.`,
+		fatal_flaw: 'BLEP is busy and couldn\'t complete the full scan right now.',
 		specs: {
 			upgradeable: false,
-			thermal: 'Unknown — live scan did not complete.',
+			thermal: 'Unknown — scan incomplete.',
 			forum_score: 5
 		},
-		roast: 'BLEP tried but the pipeline broke. Do not trust this card alone.',
-		summary: `Do not buy from this scan alone. ${reason}. Send listing link or exact specs for a real verdict.`,
+		roast: 'BLEP tried but got overwhelmed. Try again in a moment.',
+		summary: `BLEP couldn't finish scanning this one. Try again shortly, or paste a direct listing link for better results.`,
 		evidence: [
 			{
-				title: `BLEP fallback [${stage}]`,
-				url: fallbackEvidenceUrl,
-				quote_or_fact: `Scan failed at stage: ${stage}. Trace: ${traceId}. Reason: ${reason}`,
-				relevance: 'Internal trace info — no live evidence was gathered.'
+				title: 'Scan incomplete',
+				url: 'https://blep.app',
+				quote_or_fact: 'BLEP was unable to gather enough evidence for a full verdict. Please retry.',
+				relevance: 'No live evidence was gathered during this attempt.'
 			}
 		]
 	});

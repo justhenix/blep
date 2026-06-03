@@ -27,6 +27,7 @@ import {
 import { collectSources } from '$lib/server/firecrawl';
 
 import { generatePhase1, getAiErrorCode } from '$lib/server/ai';
+import { consumeGlobalCap, isGlobalCapReached } from '$lib/server/cost-guard';
 import { checkDailyQuota, consumeDailyQuota } from '$lib/server/quota';
 import { getRequestIdentity, type RequestIdentity } from '$lib/server/request-identity';
 import { createTrace, type ScanTrace } from '$lib/server/trace';
@@ -195,7 +196,7 @@ const safeLogValue = (value: unknown) =>
 
 const logEnvStatus = () => {
 	console.info(
-		`[blep env] ai=${Boolean(blepEnv.geminiApiKey || blepEnv.openaiApiKey || blepEnv.deepseekApiKey)} firecrawl=${Boolean(blepEnv.firecrawlApiKey)} db=${Boolean(blepEnv.tursoUrl)} mock=${blepEnv.useMock}`
+		`[blep env] ai=${Boolean(blepEnv.useVertex || blepEnv.geminiApiKey || blepEnv.openaiApiKey || blepEnv.deepseekApiKey)} firecrawl=${Boolean(blepEnv.firecrawlApiKey)} db=${Boolean(blepEnv.tursoUrl)} mock=${blepEnv.useMock}`
 	);
 };
 
@@ -262,10 +263,54 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (!parsed.success) {
 		trace.log('request_validated', 'fail', 'zod_validation');
+
+		// Check if it's a jailbreak attempt hiding in a huge string before failing
+		const rawQuery = typeof (body as Record<string, unknown>)?.query === 'string' ? ((body as Record<string, unknown>).query as string).toLowerCase() : '';
+		if (rawQuery.includes('ignore all') || rawQuery.includes('jailbreak') || rawQuery.includes('dan') || rawQuery.includes('system prompt') || rawQuery.includes('forget previous')) {
+			return respond(
+				json({
+					result: {
+						mode: 'VERDICT',
+						name: 'Jailbreak Attempt',
+						verdict: 'WASTE',
+						landfill_year: new Date().getFullYear(),
+						fatal_flaw: "You think you're smart eh? Try again, I dare you.",
+						specs: {
+							upgradeable: false,
+							thermal: 'Overheating from trying too hard',
+							forum_score: 1
+						},
+						roast: 'Nice try, script kiddie.',
+						summary: "You think you're smart eh? Try again, I dare you.",
+						better_target: 'Read the rules.',
+						evidence: [
+							{
+								title: 'Jailbreak detected',
+								url: 'https://blep.app/jail',
+								quote_or_fact: 'User attempted to override BLEP core directives.',
+								relevance: 'High'
+							}
+						],
+						confidence: 'HIGH'
+					},
+					ok: true,
+					quota: { remaining: 999, limit: 999 } // Don't charge quota for sass
+				})
+			);
+		}
+
 		const inputError = blepError('bad_input', 400);
 		logInputIssues(parsed.error.issues);
+		const codes = parsed.error.issues.map((i) => i.code).slice(0, 5);
 
-		return respond(buildApiErrorResponse(inputError.code), { status: 400 });
+		let friendlyMessage = inputError.publicMessage;
+		if (codes.includes('too_big')) {
+			friendlyMessage = 'Your text is too long! BLEP only reads short inputs (max 500 chars).';
+		} else {
+			friendlyMessage = 'BLEP did not understand that input. Keep it simple.';
+		}
+
+		return respond({ ok: false, error: 'bad_input', message: friendlyMessage }, { status: 400 });
 	}
 
 	trace.log('request_validated', 'done');
@@ -312,6 +357,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		const result = buildMockOutput(query, requestUrls, intent);
 
 		return respond(buildMockResponse(mockQuota(), intent, result));
+	}
+
+	// ── Global cost guard: hard cap across ALL users ──
+	if (isGlobalCapReached()) {
+		console.warn('[blep cost-guard] GLOBAL CAP HIT — blocking scan');
+		trace.log('quota_checked', 'fail', 'global_cap_reached');
+		return respond(buildFallbackResponse('quota_blocked', trace, defaultQuota(), query), {
+			status: 429
+		});
 	}
 
 	// Paid path starts here.
@@ -396,6 +450,12 @@ export const POST: RequestHandler = async ({ request }) => {
 			return respond(buildFallbackResponse(geminiCode, trace, quota, query, sources), {
 				status: 200
 			});
+		}
+
+		// Consume global cap slot
+		const globalCap = await consumeGlobalCap();
+		if (!globalCap.allowed) {
+			console.warn('[blep cost-guard] global cap exhausted mid-request');
 		}
 
 		quota = await consumeDailyQuota(quotaSubject);

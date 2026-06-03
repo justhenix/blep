@@ -216,7 +216,7 @@ textarea {
 		font-size: 0.875rem;
 	}
 	.btnPrimary:hover:not(:disabled) {
-		@apply bg-paper text-ink;
+		background: color-mix(in oklab, var(--color-ink) 85%, transparent);
 	}
 	.btnPrimary:focus-visible {
 		outline: 2px solid #111;
@@ -233,7 +233,7 @@ textarea {
 		font-size: 0.875rem;
 	}
 	.btnSecondary:hover:not(:disabled) {
-		@apply bg-ink text-paper;
+		background: color-mix(in oklab, var(--color-ink) 6%, transparent);
 	}
 	.btnSecondary:focus-visible {
 		outline: 2px solid #111;

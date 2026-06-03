@@ -13,7 +13,10 @@ const parseNonNegativeInt = (value: string | undefined, fallback: number) => {
 };
 
 export const blepEnv = {
-	// AI provider keys — at least one required for live mode
+	// AI provider — at least one required for live mode
+	useVertex: env.USE_VERTEX === 'true',
+	googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+	googleCloudLocation: env.GOOGLE_CLOUD_LOCATION,
 	geminiApiKey: env.GEMINI_API_KEY ?? env.GOOGLE_GENERATIVE_AI_API_KEY,
 	openaiApiKey: env.OPENAI_API_KEY,
 	deepseekApiKey: env.DEEPSEEK_API_KEY,
@@ -30,6 +33,7 @@ export const blepEnv = {
 
 	// Limits
 	dailyLimit: parsePositiveInt(env.BLEP_DAILY_LIMIT, 3),
+	globalDailyCap: parsePositiveInt(env.BLEP_GLOBAL_DAILY_CAP, 100),
 	useMock: env.BLEP_USE_MOCK === 'true',
 	demoMode: env.BLEP_DEMO_MODE === 'true',
 	hashSalt: env.BLEP_HASH_SALT ?? '',
@@ -43,7 +47,7 @@ export const blepEnv = {
  * Whether any AI provider key is available.
  */
 export const aiAvailable = Boolean(
-	blepEnv.geminiApiKey || blepEnv.openaiApiKey || blepEnv.deepseekApiKey
+	blepEnv.useVertex || blepEnv.geminiApiKey || blepEnv.openaiApiKey || blepEnv.deepseekApiKey
 );
 
 /**
@@ -62,7 +66,7 @@ export const validateLiveEnv = (): string[] => {
 	const missing: string[] = [];
 
 	if (!aiAvailable)
-		missing.push('AI_PROVIDER_KEY (GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)');
+		missing.push('AI_PROVIDER_KEY (USE_VERTEX or GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)');
 	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
 	if (!blepEnv.hashSalt) missing.push('BLEP_HASH_SALT');
 
