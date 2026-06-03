@@ -60,7 +60,16 @@ const HARDWARE_TERMS = [
 	'router',
 	'keyboard',
 	'mouse',
-	'headset'
+	'headset',
+	'camera',
+	'dslr',
+	'mirrorless',
+	'kamera',
+	'smartwatch',
+	'microphone',
+	'mic',
+	'earphone',
+	'tws'
 ] as const;
 
 const BRAND_TERMS = [
@@ -117,7 +126,20 @@ const BRAND_TERMS = [
 	'oppo',
 	'vivo',
 	'infinix',
-	'advan'
+	'advan',
+	'sony',
+	'nikon',
+	'canon',
+	'fujifilm',
+	'fuji',
+	'lumix',
+	'panasonic',
+	'leica',
+	'rode',
+	'shure',
+	'dji',
+	'garmin',
+	'coros'
 ] as const;
 
 const PLATFORM_TERMS = [
@@ -227,7 +249,14 @@ const WORKLOAD_TERMS = [
 	'foto',
 	'musik',
 	'music',
-	'production'
+	'production',
+	'wedding',
+	'photography',
+	'videography',
+	'portrait',
+	'vlog',
+	'vlogging',
+	'youtube'
 ] as const;
 
 const SPEC_PATTERNS = [/\b\d{1,3}\s?(gb|tb)\b/i, /\bddr[2-5]\b/i, /\bnvme\b/i] as const;
@@ -244,7 +273,15 @@ const MODEL_PATTERNS = [
 	/\b(rtx|gtx|rx)\s?\d{3,4}\b/i,
 	/\buhd\s?graphics\b/i,
 	/\biris\s?xe\b/i,
-	/\b\d{4,5}(hs|hx|kf|u|h|g|x|f|k|p)\b/i
+	/\b\d{4,5}(hs|hx|kf|u|h|g|x|f|k|p)\b/i,
+	// Camera models
+	/\ba\s?7\s?(r|s|c)?(\s?(mark\s+)?[ivx]{1,3})?\b/i,
+	/\ba\s?6\d{3}\b/i,
+	/\ba\s?9\s?(mark\s+)?[ivx]{0,3}\b/i,
+	/\ba\s?1\b/i,
+	/\bz\s?[5-9f]\s?[ivx]{0,3}\b/i,
+	/\beos\s?r\d?\s?(mark\s+)?[ivx]{0,3}\b/i,
+	/\bx-?t\d{1,2}\b/i
 ] as const;
 
 const MARKETPLACE_HOST_TERMS = [

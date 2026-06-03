@@ -71,14 +71,27 @@
 		<div class="doubt-trigger-row">
 			<button type="button" class="doubt-trigger btnSecondary" onclick={onDoubtClick}>
 				<span class="doubt-x" aria-hidden="true">✕</span>
-				Doubt this
+				{#if doubtMessages.length > 0}
+					Resume doubt
+					<svg
+						class="doubt-chevron"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="3"
+					>
+						<path d="M6 9l6 6 6-6" />
+					</svg>
+				{:else}
+					Doubt this
+				{/if}
 			</button>
 			<span class="doubt-hint font-mono-ui">Chat only. No Brain Juice used.</span>
 		</div>
 	{/if}
 
-	<!-- Doubt thread — shows when there are messages or doubt mode active -->
-	{#if doubtMessages.length > 0 || isLoading}
+	<!-- Doubt thread — shows when there are messages and doubt mode active -->
+	{#if isDoubtActive && (doubtMessages.length > 0 || isLoading)}
 		<div class="doubt-thread" bind:this={threadEl} transition:fly={{ y: 10, duration: 160 }}>
 			{#each doubtMessages as msg, idx (idx)}
 				<div
@@ -102,11 +115,11 @@
 		</div>
 	{/if}
 
-	{#if errorMsg}
+	{#if isDoubtActive && errorMsg}
 		<div class="doubt-error font-mono-ui">{errorMsg}</div>
 	{/if}
 
-	{#if showRescanCta}
+	{#if isDoubtActive && showRescanCta}
 		<div class="doubt-rescan-row">
 			<p class="doubt-rescan-hint font-body">Listing or price changed? Verify with a fresh scan.</p>
 			<button type="button" class="btnPrimary doubt-rescan-btn" onclick={onRescan}>
@@ -139,6 +152,12 @@
 		flex-wrap: wrap;
 	}
 
+	.doubt-chevron {
+		width: 1.25rem;
+		height: 1.25rem;
+		margin-left: 2px;
+	}
+
 	.doubt-trigger {
 		gap: 8px;
 	}
@@ -150,7 +169,7 @@
 	}
 
 	.doubt-hint {
-		color: rgba(17, 17, 17, 0.42);
+		color: color-mix(in oklab, var(--color-ink) 42%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -165,7 +184,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		border-top: 1px solid rgba(17, 17, 17, 0.08);
+		border-top: 1px solid color-mix(in oklab, var(--color-ink) 8%, transparent);
 		margin-top: 14px;
 	}
 
@@ -190,7 +209,7 @@
 	}
 
 	.doubt-msg-label {
-		color: rgba(17, 17, 17, 0.42);
+		color: color-mix(in oklab, var(--color-ink) 42%, transparent);
 		font-size: 9px;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -212,7 +231,7 @@
 	}
 
 	.doubt-thinking {
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-style: italic;
 	}
 
@@ -246,17 +265,17 @@
 	.doubt-rescan-btn {
 		align-self: flex-start;
 		background: var(--color-mint);
-		color: var(--color-ink);
-		border-color: var(--color-ink);
+		color: #111111;
+		border-color: #111111;
 	}
 
 	.doubt-rescan-btn:hover:not(:disabled) {
-		background: var(--color-ink);
+		background: #111111;
 		color: var(--color-mint);
 	}
 
 	.doubt-rescan-note {
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;
@@ -266,7 +285,7 @@
 	/* ── Closed / Turns ── */
 	.doubt-closed {
 		padding: 10px 0;
-		color: rgba(17, 17, 17, 0.45);
+		color: color-mix(in oklab, var(--color-ink) 45%, transparent);
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
@@ -276,7 +295,7 @@
 	.doubt-turns {
 		margin: 0;
 		padding: 6px 0 0;
-		color: rgba(17, 17, 17, 0.35);
+		color: color-mix(in oklab, var(--color-ink) 35%, transparent);
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.06em;

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { theme } from '$lib/theme.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	type NavLink = {
 		label: string;
@@ -24,7 +26,11 @@
 		aria-label="Main"
 	>
 		<a class="focus-visible-ring flex shrink-0 items-center" href="/" aria-label="BLEP home">
-			<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
+			{#if theme.resolved === 'light'}
+				<img class="h-6 w-auto sm:h-7" src="/logo-full-main.svg" alt="BLEP" />
+			{:else}
+				<img class="h-6 w-auto sm:h-7" src="/logo-full-white.svg" alt="BLEP" />
+			{/if}
 		</a>
 
 		<div class="hidden items-center gap-8 md:flex" aria-label="Landing sections">
@@ -40,14 +46,9 @@
 		</div>
 
 		<div class="flex items-center gap-4">
+			<ThemeToggle />
 			<a
-				class="focus-visible-ring font-display text-sm font-semibold text-ink/70 hover:text-ink"
-				href="/app"
-			>
-				Log in
-			</a>
-			<a
-				class="focus-visible-ring inline-flex min-h-10 items-center border border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-white transition hover:bg-white hover:text-ink"
+				class="focus-visible-ring inline-flex h-11 items-center border-[1.5px] border-ink bg-ink px-4 font-display text-sm font-semibold tracking-[0.01em] text-paper transition hover:bg-ink/85 hover:text-paper"
 				href="/app"
 			>
 				Ask BLEP
@@ -65,7 +66,7 @@
 		font-size: 0.95rem;
 		font-weight: 600;
 		letter-spacing: 0.01em;
-		color: rgb(17 17 17 / 0.72);
+		color: color-mix(in oklab, var(--color-ink) 72%, transparent);
 		text-decoration: underline;
 		text-decoration-thickness: 0.075em;
 		text-underline-offset: 0.16em;

@@ -170,11 +170,13 @@ const searchWithRetry = async (query: string, limit: number): Promise<BlepSource
 	try {
 		return await searchQuery(query, limit);
 	} catch (firstError) {
-		console.warn(`[blep firecrawl] search attempt 1 failed, retrying...`);
+		const msg1 = firstError instanceof Error ? firstError.message : String(firstError);
+		console.warn(`[blep firecrawl] search attempt 1 failed: ${msg1.slice(0, 200)}, retrying...`);
 		try {
 			return await searchQuery(query, limit);
-		} catch {
-			console.warn(`[blep firecrawl] search attempt 2 failed`);
+		} catch (secondError) {
+			const msg2 = secondError instanceof Error ? secondError.message : String(secondError);
+			console.warn(`[blep firecrawl] search attempt 2 failed: ${msg2.slice(0, 200)}`);
 			throw firstError;
 		}
 	}

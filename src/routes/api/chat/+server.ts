@@ -3,7 +3,8 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { blepPhase1OutputSchema } from '$lib/blep/schema';
 import { PHASE2_SYSTEM_PROMPT, buildPhase2Content } from '$lib/blep/prompt.phase2';
-import { generatePhase2Chat } from '$lib/server/gemini';
+import { generatePhase2Chat } from '$lib/server/ai';
+import { blepEnv } from '$lib/server/env';
 
 // ── Request schema ──────────────────────────────────
 const chatMessageSchema = z.object({
@@ -90,13 +91,64 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ ok: false, error: 'bad_json' } satisfies Phase2ErrorResponse, { status: 400 });
 	}
 
+	// Truncate massively long inputs to prevent persistent Zod failures
+	if (body && typeof body === 'object') {
+		const typedBody = body as Record<string, unknown>;
+		if (Array.isArray(typedBody.messages)) {
+			typedBody.messages = typedBody.messages.map((m: unknown) => {
+				if (m && typeof m === 'object') {
+					const msg = m as Record<string, unknown>;
+					return {
+						...msg,
+						content: typeof msg.content === 'string' ? msg.content.slice(0, 1999) : msg.content
+					};
+				}
+				return m;
+			});
+		}
+		if (typeof typedBody.originalInput === 'string') {
+			typedBody.originalInput = typedBody.originalInput.slice(0, 500);
+		}
+	}
+
 	const parsed = chatRequestSchema.safeParse(body);
 
 	if (!parsed.success) {
-		const paths = parsed.error.issues.map((i) => i.path.join('.') || 'body').slice(0, 5);
-		console.warn(`[blep chat] bad_input paths=${JSON.stringify(paths)}`);
+		// Before failing on length, check if it's a jailbreak attempt hiding in a huge string
+		const rawQuestion =
+			typeof (body as Record<string, unknown>)?.question === 'string'
+				? ((body as Record<string, unknown>).question as string).toLowerCase()
+				: '';
+		if (
+			rawQuestion.includes('ignore all') ||
+			rawQuestion.includes('jailbreak') ||
+			rawQuestion.includes('dan') ||
+			rawQuestion.includes('system prompt') ||
+			rawQuestion.includes('forget previous') ||
+			rawQuestion.includes('discard any') ||
+			rawQuestion.includes('write a python') ||
+			rawQuestion.includes('developer mode')
+		) {
+			return json({
+				ok: true,
+				reply: "You think you're smart eh? Try again, I dare you.",
+				needsNewScan: false
+			} satisfies Phase2Response);
+		}
 
-		return json({ ok: false, error: 'bad_input' } satisfies Phase2ErrorResponse, { status: 400 });
+		const paths = parsed.error.issues.map((i) => i.path.join('.') || 'body').slice(0, 5);
+		const codes = parsed.error.issues.map((i) => i.code).slice(0, 5);
+		console.warn(
+			`[blep chat] bad_input paths=${JSON.stringify(paths)} codes=${JSON.stringify(codes)}`
+		);
+
+		// Generate friendly error
+		let friendlyError = 'BLEP did not understand that input. Keep it simple and short.';
+		if (codes.includes('too_big')) {
+			friendlyError = 'That message is too long! BLEP only reads short questions (max 500 chars).';
+		}
+
+		return json({ ok: false, error: friendlyError } satisfies Phase2ErrorResponse, { status: 400 });
 	}
 
 	const { originalInput, phase1Result, messages, question } = parsed.data;
@@ -110,6 +162,19 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Build prompt content
 	const userContent = buildPhase2Content(originalInput, phase1Result, recentMessages, question);
+
+	// Mock bypass
+	if (blepEnv.useMock) {
+		console.info('[blep mock] returning mock chat response');
+		// Artificial delay to make it feel real
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		return json({
+			ok: true,
+			reply:
+				"This is a mocked response from BLEP. The real API is turned off locally to save credits. But basically: the seller is lying, the specs are bad, and you shouldn't buy it.",
+			needsNewScan: false
+		} satisfies Phase2Response);
+	}
 
 	try {
 		const rawText = await generatePhase2Chat(PHASE2_SYSTEM_PROMPT, userContent);

@@ -13,16 +13,29 @@ const parseNonNegativeInt = (value: string | undefined, fallback: number) => {
 };
 
 export const blepEnv = {
-	geminiApiKey: env.GEMINI_API_KEY,
+	// AI provider — at least one required for live mode
+	useVertex: env.USE_VERTEX === 'true',
+	googleCloudProject: env.GOOGLE_CLOUD_PROJECT,
+	googleCloudLocation: env.GOOGLE_CLOUD_LOCATION,
+	geminiApiKey: env.GEMINI_API_KEY ?? env.GOOGLE_GENERATIVE_AI_API_KEY,
+	openaiApiKey: env.OPENAI_API_KEY,
+	deepseekApiKey: env.DEEPSEEK_API_KEY,
+	openaiBaseUrl: env.OPENAI_BASE_URL,
+	aiModelPhase1: env.AI_MODEL_PHASE1,
+	aiModelPhase2: env.AI_MODEL_PHASE2,
+
+	// Scraping
 	firecrawlApiKey: env.FIRECRAWL_API_KEY,
-	firebaseProjectId: env.FIREBASE_PROJECT_ID,
-	googleApplicationCredentials: env.GOOGLE_APPLICATION_CREDENTIALS,
+
+	// Database (Turso)
+	tursoUrl: env.TURSO_DATABASE_URL,
+	tursoAuthToken: env.TURSO_AUTH_TOKEN,
+
+	// Limits
 	dailyLimit: parsePositiveInt(env.BLEP_DAILY_LIMIT, 3),
+	globalDailyCap: parsePositiveInt(env.BLEP_GLOBAL_DAILY_CAP, 100),
 	useMock: env.BLEP_USE_MOCK === 'true',
 	demoMode: env.BLEP_DEMO_MODE === 'true',
-	geminiModelMain: env.GEMINI_MODEL_MAIN ?? 'gemini-3.1-flash-lite',
-	geminiModelBackup: env.GEMINI_MODEL_BACKUP ?? 'gemini-2.5-flash-lite',
-	geminiModelDemo: env.GEMINI_MODEL_DEMO ?? 'gemini-3.5-flash',
 	hashSalt: env.BLEP_HASH_SALT ?? '',
 	cooldownSeconds: parseNonNegativeInt(env.BLEP_COOLDOWN_SECONDS, 15),
 	abuseDailyLimit: parsePositiveInt(env.BLEP_ABUSE_DAILY_LIMIT, 10),
@@ -31,12 +44,17 @@ export const blepEnv = {
 } as const;
 
 /**
- * Whether Firebase Admin credentials are available.
+ * Whether any AI provider key is available.
+ */
+export const aiAvailable = Boolean(
+	blepEnv.useVertex || blepEnv.geminiApiKey || blepEnv.openaiApiKey || blepEnv.deepseekApiKey
+);
+
+/**
+ * Whether database credentials are available.
  * When false, quota/cache/abuse checks are bypassed gracefully.
  */
-export const firebaseAvailable = Boolean(
-	blepEnv.firebaseProjectId || blepEnv.googleApplicationCredentials
-);
+export const dbAvailable = Boolean(blepEnv.tursoUrl);
 
 /**
  * Validate that required API keys exist for live mode.
@@ -47,13 +65,15 @@ export const validateLiveEnv = (): string[] => {
 
 	const missing: string[] = [];
 
-	if (!blepEnv.geminiApiKey) missing.push('GEMINI_API_KEY');
-	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
-
-	if (!firebaseAvailable) {
-		console.warn(
-			'[blep env] Firebase credentials missing — quota/cache/abuse bypassed in live mode'
+	if (!aiAvailable)
+		missing.push(
+			'AI_PROVIDER_KEY (USE_VERTEX or GEMINI_API_KEY or OPENAI_API_KEY or DEEPSEEK_API_KEY)'
 		);
+	if (!blepEnv.firecrawlApiKey) missing.push('FIRECRAWL_API_KEY');
+	if (!blepEnv.hashSalt) missing.push('BLEP_HASH_SALT');
+
+	if (!dbAvailable) {
+		console.warn('[blep env] TURSO_DATABASE_URL missing — quota/cache/abuse bypassed in live mode');
 	}
 
 	return missing;

@@ -42,12 +42,13 @@ firebase-service-account*.json
 *.pem
 *.key
 *.p12
+env.yaml
 
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Agents
+# Personal Agents
 .antigravitycli
 .playwright-cli
 AGENTS.md

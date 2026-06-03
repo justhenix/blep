@@ -2,16 +2,10 @@
 	<title>Terms | BLEP</title>
 </svelte:head>
 
-<main class="flex-grow px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+<main class="grow px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
 	<article class="mx-auto w-full max-w-3xl min-w-0">
 		<header class="mb-16 border-b border-ink/15 pb-8">
-			<p class="mb-4 font-mono text-xs font-bold tracking-[0.1em] text-ink/50 uppercase">
-				BLEP TERMS
-			</p>
 			<h1 class="font-display text-4xl leading-tight font-bold sm:text-5xl">Terms of Use</h1>
-			<p class="mt-6 font-mono text-sm font-bold text-ink/40 uppercase">
-				Draft for hackathon demo. Last updated: May 28, 2026.
-			</p>
 		</header>
 
 		<section class="grid gap-10 sm:gap-12">
@@ -71,7 +65,7 @@
 				</h2>
 				<p class="font-body text-base leading-relaxed text-ink/70 sm:text-lg">
 					BLEP may apply quota, cache, cooldown, abuse detection, blocking, or rate limits to keep
-					the demo stable and control costs.
+					the service stable and control costs.
 				</p>
 			</div>
 
@@ -94,8 +88,8 @@
 					No Warranty
 				</h2>
 				<p class="font-body text-base leading-relaxed text-ink/70 sm:text-lg">
-					BLEP is provided as-is for demo use, with no warranty of accuracy, availability, fitness
-					for a particular purpose, or non-infringement.
+					BLEP is provided as-is, with no warranty of accuracy, availability, fitness for a
+					particular purpose, or non-infringement.
 				</p>
 			</div>
 		</section>

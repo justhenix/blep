@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { base } from '$app/paths';
+	import { theme } from '$lib/theme.svelte';
 
 	const ERROR_LOGOS: Record<number, string> = {
 		400: '/logo-black-400.svg',
@@ -10,6 +11,16 @@
 		429: '/logo-black-429.svg',
 		500: '/logo-black-500.svg',
 		503: '/logo-black-503.svg'
+	};
+
+	const ERROR_LOGOS_DARK: Record<number, string> = {
+		400: '/logo-w-400.svg',
+		401: '/logo-w-401.svg',
+		403: '/logo-w-403.svg',
+		404: '/logo-w-404.svg',
+		429: '/logo-w-429.svg',
+		500: '/logo-w-500.svg',
+		503: '/logo-w-503.svg'
 	};
 
 	const ROASTS: Record<number, string> = {
@@ -35,6 +46,7 @@
 	const status = $derived(page.status);
 	const message = $derived(page.error?.message || STATUS_LABELS[status] || 'Unknown Error');
 	const logo = $derived(ERROR_LOGOS[status] || ERROR_LOGOS[404]);
+	const logoDark = $derived(ERROR_LOGOS_DARK[status] || ERROR_LOGOS_DARK[404]);
 	const roast = $derived(ROASTS[status] || `BLEP has no words for this. That's rare.`);
 	const label = $derived(STATUS_LABELS[status] || `Error ${status}`);
 </script>
@@ -46,7 +58,11 @@
 
 <main class="error-page">
 	<div class="error-inner">
-		<img class="error-logo" src={logo} alt="BLEP {status}" />
+		{#if theme.resolved === 'light'}
+			<img class="error-logo" src={logo} alt="BLEP {status}" />
+		{:else}
+			<img class="error-logo" src={logoDark} alt="BLEP {status}" />
+		{/if}
 
 		<div class="error-copy">
 			<p class="error-label">{label}</p>
@@ -111,7 +127,7 @@
 		font-size: clamp(0.95rem, 1.1vw, 1.15rem);
 		line-height: 1.5;
 		margin: 0;
-		color: rgb(17 17 17 / 0.6);
+		color: color-mix(in oklab, var(--color-ink) 60%, transparent);
 	}
 
 	.error-detail {
@@ -120,9 +136,9 @@
 		line-height: 1.4;
 		margin: 0;
 		padding: 0.5rem 0.75rem;
-		background: rgb(17 17 17 / 0.04);
+		background: color-mix(in oklab, var(--color-ink) 4%, transparent);
 		border-left: 3px solid var(--color-ink);
-		color: rgb(17 17 17 / 0.55);
+		color: color-mix(in oklab, var(--color-ink) 55%, transparent);
 	}
 
 	.error-cta {

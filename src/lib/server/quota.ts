@@ -1,76 +1,78 @@
-import { createHash } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
 import type { BlepQuotaCheck } from '$lib/blep/types';
 import { blepEnv } from './env';
-import { getFirebaseDb } from './firebase-admin';
+import { getDb } from './db';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
-const safeDocId = (value: string) => value.replaceAll('/', '_').slice(0, 120);
-
-export const hashClientAddress = (address: string | null | undefined) => {
-	if (!address) return 'anon';
-
-	return createHash('sha256').update(address).digest('hex').slice(0, 24);
-};
-
 const bypassQuota = (): BlepQuotaCheck => {
-	console.warn('[blep quota] Firebase unavailable — quota bypassed');
+	console.warn('[blep quota] DB unavailable — quota bypassed');
 	return { allowed: true, remaining: blepEnv.dailyLimit, limit: blepEnv.dailyLimit };
 };
 
 export const checkDailyQuota = async (subject: string): Promise<BlepQuotaCheck> => {
-	const db = getFirebaseDb();
+	const db = getDb();
 	if (!db) return bypassQuota();
 
 	const limit = blepEnv.dailyLimit;
 	const date = todayKey();
-	const doc = db.collection('quotas').doc(`${safeDocId(subject)}_${date}`);
-	const snap = await doc.get();
-	const used = snap.exists ? Number(snap.get('used') ?? 0) : 0;
 
-	return {
-		allowed: used < limit,
-		remaining: Math.max(limit - used, 0),
-		limit
-	};
+	try {
+		const row = await db.execute({
+			sql: `SELECT used FROM quotas WHERE subject = ? AND date = ?`,
+			args: [subject, date]
+		});
+
+		const used = row.rows.length ? Number(row.rows[0].used ?? 0) : 0;
+
+		return {
+			allowed: used < limit,
+			remaining: Math.max(limit - used, 0),
+			limit
+		};
+	} catch (error) {
+		console.warn('[blep quota] check failed:', error);
+		return bypassQuota();
+	}
 };
 
 export const consumeDailyQuota = async (subject: string): Promise<BlepQuotaCheck> => {
-	const db = getFirebaseDb();
+	const db = getDb();
 	if (!db) return bypassQuota();
 
 	const limit = blepEnv.dailyLimit;
 	const date = todayKey();
-	const doc = db.collection('quotas').doc(`${safeDocId(subject)}_${date}`);
+	const nowUnix = Math.floor(Date.now() / 1000);
 
-	return db.runTransaction(async (tx) => {
-		const snap = await tx.get(doc);
-		const used = snap.exists ? Number(snap.get('used') ?? 0) : 0;
+	try {
+		// UPSERT: insert w/ used=1 or increment existing
+		await db.execute({
+			sql: `INSERT INTO quotas (subject, date, used, "limit", updated_at, created_at)
+			      VALUES (?, ?, 1, ?, ?, ?)
+			      ON CONFLICT(subject, date) DO UPDATE SET
+			        used = quotas.used + 1,
+			        updated_at = excluded.updated_at`,
+			args: [subject, date, limit, nowUnix, nowUnix]
+		});
 
-		if (used >= limit) {
+		// Read back to get accurate count
+		const row = await db.execute({
+			sql: `SELECT used FROM quotas WHERE subject = ? AND date = ?`,
+			args: [subject, date]
+		});
+
+		const used = row.rows.length ? Number(row.rows[0].used ?? 0) : 1;
+
+		if (used > limit) {
 			return { allowed: false, remaining: 0, limit };
 		}
 
-		const nextUsed = used + 1;
-
-		tx.set(
-			doc,
-			{
-				subject,
-				date,
-				used: nextUsed,
-				limit,
-				updatedAt: FieldValue.serverTimestamp(),
-				createdAt: snap.exists ? snap.get('createdAt') : FieldValue.serverTimestamp()
-			},
-			{ merge: true }
-		);
-
 		return {
 			allowed: true,
-			remaining: Math.max(limit - nextUsed, 0),
+			remaining: Math.max(limit - used, 0),
 			limit
 		};
-	});
+	} catch (error) {
+		console.warn('[blep quota] consume failed:', error);
+		return bypassQuota();
+	}
 };
