@@ -51,9 +51,7 @@ export async function consumeGlobalCap(): Promise<{
 	memCount++;
 
 	// Persist to DB (best-effort, non-blocking)
-	persistToDb(memCount).catch((err) =>
-		console.warn('[blep cost-guard] DB persist failed:', err)
-	);
+	persistToDb(memCount).catch((err) => console.warn('[blep cost-guard] DB persist failed:', err));
 
 	const remaining = Math.max(cap - memCount, 0);
 	console.info(`[blep cost-guard] global scan ${memCount}/${cap} (${remaining} remaining)`);

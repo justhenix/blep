@@ -96,7 +96,9 @@ function resolveProvider(): ResolvedProvider {
 		const phase1Id = getEnv('AI_MODEL_PHASE1') ?? 'gemini-2.5-flash';
 		const phase2Id = getEnv('AI_MODEL_PHASE2') ?? 'gemini-2.5-flash-lite';
 		const project = getEnv('GOOGLE_CLOUD_PROJECT') ?? 'henixhacking';
-		console.info(`[blep ai] provider=vertex project=${project} phase1=${phase1Id} phase2=${phase2Id}`);
+		console.info(
+			`[blep ai] provider=vertex project=${project} phase1=${phase1Id} phase2=${phase2Id}`
+		);
 		return {
 			tag: 'vertex',
 			phase1Model: createModel('vertex', phase1Id),
@@ -208,7 +210,9 @@ export async function generatePhase1(
 
 	try {
 		const { object } = await generateObject({
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			model: provider.phase1Model as any,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			schema: config.schema as any,
 			system: config.system,
 			prompt: userPrompt,

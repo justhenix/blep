@@ -21,15 +21,18 @@ const fallbackEvidenceUrl = 'https://example.com/blep/mock-evidence';
  */
 export const makeSafeFallback = (
 	query = 'Unknown device',
-	_reason = 'Unknown error',
-	_stage = 'unknown',
-	_traceId = 'none'
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	reason = 'Unknown error',
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	stage = 'unknown',
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	traceId = 'none'
 ): BlepVerdict =>
 	blepVerdictSchema.parse({
 		name: query.trim() || 'Unknown device',
 		verdict: 'CAUTION',
 		landfill_year: 2028,
-		fatal_flaw: 'BLEP is busy and couldn\'t complete the full scan right now.',
+		fatal_flaw: "BLEP is busy and couldn't complete the full scan right now.",
 		specs: {
 			upgradeable: false,
 			thermal: 'Unknown — scan incomplete.',
@@ -41,7 +44,8 @@ export const makeSafeFallback = (
 			{
 				title: 'Scan incomplete',
 				url: 'https://blep.app',
-				quote_or_fact: 'BLEP was unable to gather enough evidence for a full verdict. Please retry.',
+				quote_or_fact:
+					'BLEP was unable to gather enough evidence for a full verdict. Please retry.',
 				relevance: 'No live evidence was gathered during this attempt.'
 			}
 		]

@@ -33,7 +33,7 @@
 <div class="relative inline-block text-left">
 	<button
 		bind:this={buttonRef}
-		class="focus-visible-ring flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border-[1.5px] border-ink/25 bg-paper text-ink transition-colors hover:bg-ink/6 hover:border-transparent"
+		class="focus-visible-ring flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border-[1.5px] border-ink/25 bg-paper text-ink transition-colors hover:border-transparent hover:bg-ink/6"
 		onclick={toggle}
 		aria-label="Toggle theme"
 		aria-expanded={open}

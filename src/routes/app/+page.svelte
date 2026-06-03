@@ -373,26 +373,95 @@
 	const AGENT_LOG_POOLS: Record<Intent, string[][]> = {
 		verdict: [
 			['intent → verdict scan', 'routing to verdict judge', 'VERDICT_SCAN locked'],
-			['parsing listing data...', 'extracting device + price', 'reading seller claims', 'scanning listing metadata'],
-			['checking live prices IDR', 'scanning tokped/shopee bracket', 'market reality check', 'cross-referencing competitor listings', 'price bracket validated'],
-			['pulling spec sheet', 'CPU/GPU/RAM extracted', 'spec validation running', 'thermal data cross-referenced', 'checking benchmark archives'],
-			['sniffing seller cope...', 'trap scan: soldered RAM?', 'checking thermal complaints', 'upgrade path analysis', 'checking forum complaint density'],
+			[
+				'parsing listing data...',
+				'extracting device + price',
+				'reading seller claims',
+				'scanning listing metadata'
+			],
+			[
+				'checking live prices IDR',
+				'scanning tokped/shopee bracket',
+				'market reality check',
+				'cross-referencing competitor listings',
+				'price bracket validated'
+			],
+			[
+				'pulling spec sheet',
+				'CPU/GPU/RAM extracted',
+				'spec validation running',
+				'thermal data cross-referenced',
+				'checking benchmark archives'
+			],
+			[
+				'sniffing seller cope...',
+				'trap scan: soldered RAM?',
+				'checking thermal complaints',
+				'upgrade path analysis',
+				'checking forum complaint density'
+			],
 			['building verdict card', 'rendering judgment', 'verdict locked. done.']
 		],
 		recommendation: [
 			['intent → recommendation', 'budget request detected', 'RECOMMENDATION_SCAN locked'],
-			['parsing budget ceiling', 'budget: reading IDR target', 'constraint extraction', 'use case mapped'],
-			['hunting current listings', 'scanning marketplace bracket', 'price bracket mapped', 'checking availability across stores', 'comparing seller prices'],
-			['finding target spec class', 'GPU tier selection running', 'acceptable hardware filtered', 'thermal profiles checked', 'shortlisting candidates'],
-			['rejecting overpriced traps', 'trap scan: 8GB soldered?', 'filtering RGB tax', 'upgrade path scored', 'checking return/warranty'],
+			[
+				'parsing budget ceiling',
+				'budget: reading IDR target',
+				'constraint extraction',
+				'use case mapped'
+			],
+			[
+				'hunting current listings',
+				'scanning marketplace bracket',
+				'price bracket mapped',
+				'checking availability across stores',
+				'comparing seller prices'
+			],
+			[
+				'finding target spec class',
+				'GPU tier selection running',
+				'acceptable hardware filtered',
+				'thermal profiles checked',
+				'shortlisting candidates'
+			],
+			[
+				'rejecting overpriced traps',
+				'trap scan: 8GB soldered?',
+				'filtering RGB tax',
+				'upgrade path scored',
+				'checking return/warranty'
+			],
 			['building shortlist', 'recommendation panel ready', 'picks locked. done.']
 		],
 		comparison: [
 			['intent → comparison', 'two devices detected', 'COMPARISON_SCAN locked'],
-			['parsing option A + B', 'extracting both configs', 'device pair identified', 'normalizing spec formats'],
-			['checking prices for both', 'benchmark data lookup', 'market position compared', 'verifying current street price', 'cross-checking discount validity'],
-			['spec diff running', 'thermal + chassis scored', 'side-by-side built', 'CPU multi-thread compared', 'GPU benchmark delta calculated'],
-			['checking trap asymmetry', 'RAM/storage lock check', 'upgrade path compared', 'checking hidden downgrades', 'forum sentiment scored'],
+			[
+				'parsing option A + B',
+				'extracting both configs',
+				'device pair identified',
+				'normalizing spec formats'
+			],
+			[
+				'checking prices for both',
+				'benchmark data lookup',
+				'market position compared',
+				'verifying current street price',
+				'cross-checking discount validity'
+			],
+			[
+				'spec diff running',
+				'thermal + chassis scored',
+				'side-by-side built',
+				'CPU multi-thread compared',
+				'GPU benchmark delta calculated'
+			],
+			[
+				'checking trap asymmetry',
+				'RAM/storage lock check',
+				'upgrade path compared',
+				'checking hidden downgrades',
+				'forum sentiment scored'
+			],
 			['winner selected', 'comparison card built', 'judgment rendered. done.']
 		]
 	};
@@ -865,15 +934,15 @@
 			// Weight map: how relatively "heavy" each step type is.
 			// Higher weight = more time spent if fetch is still running.
 			const STEP_WEIGHTS: Record<string, number> = {
-				intent: 0.5,    // instant: local classification
-				listing: 1.5,   // parsing: moderate
-				option: 1.5,    // parsing: moderate
-				budget: 1.0,    // parsing: light
-				market: 3.0,    // scraping: heavy network call
-				spec: 2.5,      // extraction/comparison: heavy
-				trap: 2.0,      // analysis: moderate-heavy
-				verdict: 0.8,   // rendering: fast once data exists
-				winner: 0.8     // rendering: fast once data exists
+				intent: 0.5, // instant: local classification
+				listing: 1.5, // parsing: moderate
+				option: 1.5, // parsing: moderate
+				budget: 1.0, // parsing: light
+				market: 3.0, // scraping: heavy network call
+				spec: 2.5, // extraction/comparison: heavy
+				trap: 2.0, // analysis: moderate-heavy
+				verdict: 0.8, // rendering: fast once data exists
+				winner: 0.8 // rendering: fast once data exists
 			};
 
 			const getWeight = (stepId: string) => STEP_WEIGHTS[stepId] ?? 1.5;
@@ -882,11 +951,7 @@
 			const totalWeight = toolSteps.reduce((sum, s) => sum + getWeight(s.id), 0);
 
 			// Sub-step output cycling — show multiple outputs for heavy steps
-			const cycleOutput = async (
-				stepIdx: number,
-				durationMs: number,
-				pool: string[]
-			) => {
+			const cycleOutput = async (stepIdx: number, durationMs: number, pool: string[]) => {
 				if (pool.length <= 1 || durationMs < 600) return;
 				const cycleInterval = Math.max(400, durationMs / Math.min(pool.length, 3));
 				let cycles = 0;
@@ -913,9 +978,7 @@
 						} else if (isFallback()) {
 							toolSteps[j].status = j === lastIdx ? 'fallback' : 'done';
 							toolSteps[j].output =
-								j === lastIdx
-									? 'blep is busy, try again shortly.'
-									: pickRandom(pools[j]);
+								j === lastIdx ? 'blep is busy, try again shortly.' : pickRandom(pools[j]);
 						} else {
 							toolSteps[j].status = 'done';
 							toolSteps[j].output = pickRandom(pools[j]);
@@ -1574,33 +1637,17 @@
 				aria-controls="sidebar"
 			>
 				{#if theme.resolved === 'light'}
-					<img
-						src="/logo-main.svg"
-						alt=""
-						class="sidebar-logo-icon"
-					/>
+					<img src="/logo-main.svg" alt="" class="sidebar-logo-icon" />
 				{:else}
-					<img
-						src="/logo-white.svg"
-						alt=""
-						class="sidebar-logo-icon"
-					/>
+					<img src="/logo-white.svg" alt="" class="sidebar-logo-icon" />
 				{/if}
 			</button>
 			<div class="sidebar-brand-expanded">
 				<a href="/" class="sidebar-brand-link" aria-label="BLEP home">
 					{#if theme.resolved === 'light'}
-						<img
-							src="/logo-full-main.svg"
-							alt="BLEP"
-							class="sidebar-logo-full"
-						/>
+						<img src="/logo-full-main.svg" alt="BLEP" class="sidebar-logo-full" />
 					{:else}
-						<img
-							src="/logo-full-white.svg"
-							alt="BLEP"
-							class="sidebar-logo-full"
-						/>
+						<img src="/logo-full-white.svg" alt="BLEP" class="sidebar-logo-full" />
 					{/if}
 				</a>
 				<button
@@ -1841,17 +1888,9 @@
 						<div class="idle-copy">
 							<div class="idle-heading-row">
 								{#if theme.resolved === 'light'}
-									<img
-										src="/logo-main.svg"
-										alt=""
-										class="idle-mark"
-									/>
+									<img src="/logo-main.svg" alt="" class="idle-mark" />
 								{:else}
-									<img
-										src="/logo-white.svg"
-										alt=""
-										class="idle-mark"
-									/>
+									<img src="/logo-white.svg" alt="" class="idle-mark" />
 								{/if}
 								<h1 class="idle-heading {fontDisplay}">{activeHero.headline}</h1>
 							</div>
@@ -1897,7 +1936,8 @@
 															<span class="scan-error-title {fontDisplay}">BLEP is busy</span>
 														</div>
 														<p class="scan-error-explain {fontBody}">
-															BLEP couldn't complete the full scan right now. Try again in a moment — results may improve.
+															BLEP couldn't complete the full scan right now. Try again in a moment
+															— results may improve.
 														</p>
 														<button
 															type="button"
