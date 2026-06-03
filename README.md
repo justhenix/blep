@@ -57,11 +57,9 @@ BLEP is intentionally not a multi-turn assistant. It is a one-shot agentic judge
 - TypeScript
 - Tailwind CSS
 - SvelteKit adapter-node
-- Firebase Admin SDK
-- Firebase Auth
-- Firestore
+- Turso (libSQL)
 - Firecrawl
-- Gemini via `@google/genai`
+- Multi-model AI Support (Gemini, Vertex, OpenAI, Deepseek)
 - Zod
 - Docker
 - Cloud Run target deployment
@@ -192,7 +190,7 @@ Use live mode for real scans.
 BLEP_USE_MOCK=false
 ```
 
-Live mode uses Firecrawl, Gemini, Firestore quota, cache, and abuse controls.
+Live mode uses Firecrawl, selected AI models, Turso quota, cache, and abuse controls.
 
 </details>
 
@@ -202,32 +200,36 @@ Live mode uses Firecrawl, Gemini, Firestore quota, cache, and abuse controls.
 Create `.env` from `.env.example`.
 
 ```env
+# AI Providers (at least one is required for live mode)
 GEMINI_API_KEY=
-FIRECRAWL_API_KEY=
-FIREBASE_PROJECT_ID=
-GOOGLE_APPLICATION_CREDENTIALS=
+OPENAI_API_KEY=
+DEEPSEEK_API_KEY=
+USE_VERTEX=false
 
+# Models
+AI_MODEL_PHASE1=gemini-3.5-flash
+AI_MODEL_PHASE2=gemini-3.1-flash-lite
+
+# Scraping
+FIRECRAWL_API_KEY=
+
+# Database
+TURSO_DATABASE_URL=
+TURSO_AUTH_TOKEN=
+
+# Limits & config
 BLEP_USE_MOCK=true
 BLEP_DEMO_MODE=false
 BLEP_DAILY_LIMIT=2
+BLEP_GLOBAL_DAILY_CAP=100
 BLEP_ABUSE_DAILY_LIMIT=10
 BLEP_COOLDOWN_SECONDS=15
 BLEP_CACHE_TTL_HOURS=24
 BLEP_HASH_SALT=change-me-local-dev
 BLEP_PROMPT_VERSION=v1
-
-GEMINI_MODEL_MAIN=gemini-3.1-flash-lite
-GEMINI_MODEL_BACKUP=gemini-2.5-flash-lite
-GEMINI_MODEL_DEMO=gemini-3.5-flash
 ```
 
-Local Firebase Admin setup:
-
-```env
-GOOGLE_APPLICATION_CREDENTIALS="D:/path/to/blep-firebase-adminsdk.json"
-```
-
-Do not commit `.env`, service account JSON, or other secrets.
+Do not commit `.env` or other secrets.
 
 </details>
 
@@ -309,7 +311,7 @@ BLEP includes several backend protections:
 
 ### Cache behavior
 
-Repeated live scans can be served from Firestore cache instead of calling Firecrawl and Gemini again. Cache keys are derived from normalized query text, normalized URLs, and the prompt version.
+Repeated live scans can be served from Turso cache instead of calling Firecrawl and AI models again. Cache keys are derived from normalized query text, normalized URLs, and the prompt version.
 
 ### Abuse control
 
@@ -374,14 +376,16 @@ src/lib/blep/
 
 src/lib/server/
   abuse.ts
+  ai.ts
   cache.ts
+  cost-guard.ts
+  db.ts
   env.ts
   errors.ts
   firecrawl.ts
-  firebase-admin.ts
-  gemini.ts
   quota.ts
   request-identity.ts
+  trace.ts
 ```
 
 </details>
@@ -396,4 +400,3 @@ Immediate next steps:
 - keep mock mode on during UI work
 - deploy to Cloud Run
 - configure production secrets
-- add Firebase Auth UI when needed
