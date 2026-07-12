@@ -1,5 +1,7 @@
 # BLEP
 
+Built by [Henix, full-stack web developer](https://henix.my.id).
+
 BLEP is a tiny AI hardware judge that helps people avoid buying bad used laptops and near e-waste devices.
 
 Instead of acting like a chatbot, BLEP runs a focused one-shot research pipeline: it searches live sources, reads hardware evidence, asks Gemini for a strict structured verdict, validates the result, and renders a clear buy/caution/waste decision.
